@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "xbox-clips-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+
+  // Non-secret configuration. XBL_API_KEY is a secret: `wrangler secret put XBL_API_KEY`
+  // in production, `.dev.vars` locally. Never add it here - vars are committed in plain text.
+  "vars": {
+    // Comma-separated. The deployed Pages origin plus local UI development. Never a
+    // wildcard: the shared upstream budget is worth protecting from other sites.
+    "ALLOWED_ORIGINS": "https://xbox-clips-ui.pages.dev,http://localhost:5173",
+    // Where /share/:xuid/:clipId redirects human visitors.
+    "UI_ORIGIN": "https://xbox-clips-ui.pages.dev"
+  },
+
+  // Namespace "xbox-clips-api-cache". The binding name is what the code uses (env.CACHE).
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "5eaad331b78d4333b50ffe8547d2e2f5"
+    }
+  ],
+
+  // Per-IP inbound limit protecting the shared upstream budget. Costs no KV writes.
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ]
+}

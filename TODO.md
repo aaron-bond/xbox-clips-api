@@ -3,12 +3,8 @@
 Live backlog. Finished items keep a short note on what was actually built and
 any trade-off made.
 
-## Before first deploy
+## Deployment
 
-- [ ] Create the KV namespace and put its id in `wrangler.toml` (README,
-      Deployment step 1).
-- [ ] `wrangler secret put XBL_API_KEY`.
-- [ ] Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to GitHub secrets.
 - [ ] Confirm the UI's Pages origin (`ALLOWED_ORIGINS`, `UI_ORIGIN`) and its
       clip route. The share page redirects to `/clip/:xuid/:clipId`, a
       contract with xbox-clips-ui.
@@ -38,6 +34,18 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **First deploy** (2026-10-16). Live at
+      `https://xbox-clips-api.xbox-clips-api.workers.dev`. KV namespace
+      `xbox-clips-api-cache` bound as `CACHE`; `XBL_API_KEY` set as a Worker
+      secret with a key used only by production; GitHub secrets set for
+      CI deploys. The free plan accepts the rate-limiting binding.
+      Trade-off: a non-interactive `wrangler deploy` registered the account's
+      `workers.dev` subdomain itself, named after the Worker. It can be
+      changed in the dashboard, and applies to every Worker on the account.
+- [x] **Config moved to `wrangler.jsonc`** (2026-10-16). Cloudflare
+      recommends JSONC for new projects, and some newer Wrangler features
+      are only available with a JSON config. Same content as the TOML file.
 
 - [x] **Scaffold per PLAN §8** (2026-10-16). Hono app, KV cache with
       freshness and stale fallback, OpenXBL provider and transformer, share

@@ -7,6 +7,8 @@ for anyone. A Cloudflare Worker fetches clip data from
 and hands media URLs to the browser, which streams video straight from the
 Xbox CDN.
 
+Live at `https://xbox-clips-api.xbox-clips-api.workers.dev`.
+
 The design and the reasoning behind it are in [PLAN-v1.md](PLAN-v1.md). The
 frontend is [xbox-clips-ui](https://github.com/aaron-bond/xbox-clips-ui).
 
@@ -46,7 +48,7 @@ dev server.
 | Command | Does |
 | :--- | :--- |
 | `npm test` | Runs the suite inside the Workers runtime against local KV. Never calls the real API. |
-| `npm run typecheck` | Regenerates runtime types from `wrangler.toml`, then runs `tsc`. |
+| `npm run typecheck` | Regenerates runtime types from `wrangler.jsonc`, then runs `tsc`. |
 | `npm run dev` | Local Worker on port 8787. |
 
 ## Deployment
@@ -56,11 +58,17 @@ pass. Pull requests run typecheck and tests only.
 
 One-time setup:
 
-1. `npx wrangler kv namespace create CACHE` and put the printed id in
-   `wrangler.toml`, replacing the zero placeholder.
-2. `npx wrangler secret put XBL_API_KEY` and paste the OpenXBL key.
+1. `npx wrangler kv namespace create xbox-clips-api-cache` and put the
+   printed id in the existing `kv_namespaces` entry in `wrangler.jsonc`.
+   The argument is only the namespace's display name; the binding name
+   `CACHE` is what the code uses and stays as it is. Decline Wrangler's
+   offer to update the config, which would add a second entry.
+2. `npx wrangler secret put XBL_API_KEY` and paste the OpenXBL key, or add
+   it in the dashboard under the Worker's Settings → Variables and Secrets
+   with type **Secret**. A plain-text variable would be removed by the next
+   deploy.
 3. In the GitHub repository settings, add the secrets
    `CLOUDFLARE_API_TOKEN` (with Workers edit permission) and
    `CLOUDFLARE_ACCOUNT_ID`.
-4. Check `ALLOWED_ORIGINS` and `UI_ORIGIN` in `wrangler.toml` against the
+4. Check `ALLOWED_ORIGINS` and `UI_ORIGIN` in `wrangler.jsonc` against the
    deployed UI's origin.

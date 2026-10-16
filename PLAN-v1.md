@@ -1,6 +1,6 @@
 # API Plan — v1 (first cut)
 
-**Status:** scaffolded and tested locally; not yet deployed. Written 2026-10-16.
+**Status:** built and deployed. Written 2026-10-16.
 **Where this stands right now, and what to do next: §10.**
 
 This is the first-cut plan for `xbox-clips-api`, the backend for a social
@@ -442,8 +442,8 @@ with `curl` and a personal key; every OpenXBL call spends one request of
 the hourly budget, and probing a media URL spends none:
 
 ```
-curl -s -H "X-Authorization: $XBL_KEY" https://api.xbl.io/v2/search/<gamertag>
-curl -s -H "X-Authorization: $XBL_KEY" https://api.xbl.io/v2/dvr/gameclips/<xuid>
+curl -s -H "X-Authorization: $XBL-API-KEY" https://api.xbl.io/v2/search/<gamertag>
+curl -s -H "X-Authorization: $XBL-API-KEY" https://api.xbl.io/v2/dvr/gameclips/<xuid>
 curl -sI '<media url>'
 ```
 
@@ -482,14 +482,16 @@ curl -sI '<media url>'
 
 - TypeScript, strict mode.
 - Hono for routing (§4).
-- `wrangler.toml` carrying the KV namespace binding and the rate-limit
-  binding. `XBL_API_KEY` is a secret via `wrangler secret put`, never a
+- `wrangler.jsonc` carrying the KV namespace binding and the rate-limit
+  binding. JSONC rather than TOML because Cloudflare recommends it for new
+  projects and makes some newer features available only with a JSON
+  config. `XBL_API_KEY` is a secret via `wrangler secret put`, never a
   `[vars]` entry — `[vars]` values are committed in plain text.
 - Vitest with `@cloudflare/vitest-plugin` (the renamed successor of
   `@cloudflare/vitest-pool-workers`), so tests exercise real Worker
   semantics against Miniflare-backed KV rather than mocks. KV is not
   isolated between tests, so route tests clear it before each one.
-- Runtime types generated from `wrangler.toml` by `wrangler types` before
+- Runtime types generated from `wrangler.jsonc` by `wrangler types` before
   every typecheck, not committed.
 - A fake `IXboxDataProvider` for tests, so the suite never touches the
   network or spends rate-limit budget.
@@ -525,9 +527,10 @@ empty `200` as public with no clips. It is marked `TODO(O3)` in code.
 
 Updated 2026-10-16.
 
-**Scaffolded per §8 and tested locally; not yet deployed or committed.**
-Every route in §5 is implemented, with the caching, stale-serving and
-error rules above. The suite has 61 tests and never touches the network.
+**Built per §8 and deployed** to
+`https://xbox-clips-api.xbox-clips-api.workers.dev`. Pushes to `main`
+deploy through GitHub Actions. Every route in §5 is implemented, with the
+caching, stale-serving and error rules above. The suite has 61 tests and never touches the network.
 One local smoke run against the live API exercised every route and cost
 4 upstream calls. Repeat requests were served from cache. `TODO.md` is the
 working backlog; `CLAUDE.md` is the map of the code.
@@ -573,9 +576,6 @@ working backlog; `CLAUDE.md` is the map of the code.
 
 ### Next steps, in order
 
-1. First commit, once reviewed.
-2. One-time deployment setup: KV namespace, `XBL_API_KEY` secret, GitHub
-   secrets (README, Deployment).
-3. Test a restricted-privacy account; record it in §7 and settle the §6
+1. Test a restricted-privacy account; record it in §7 and settle the §6
    mapping.
-4. Start xbox-clips-ui against this API.
+2. Start xbox-clips-ui against this API.
