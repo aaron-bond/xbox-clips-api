@@ -1,0 +1,168 @@
+import { Cache } from './cache';
+import { toMetadata, type ClipMetadata, type ClipPage, type GameClipInfo, type XboxUserProfile } from './domain';
+import { AppError } from './errors';
+import type { IXboxDataProvider } from './provider/types';
+import type { PlayerIdentifier } from './validation';
+
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+
+/**
+ * Cache policy (PLAN-v1.md §5). Each entry has a freshness window and a longer
+ * KV retention, so stale data can be served when upstream is under pressure.
+ */
+export const POLICY = {
+  /** Gamertag → XUID never changes. */
+  xuid: { fresh: 30 * DAY, retain: 30 * DAY },
+  profile: { fresh: 2 * HOUR, retain: 24 * HOUR },
+  clips: {
+    /** Fresh until this long before the earliest media URL in the list expires. */
+    expiryMargin: 5 * MINUTE,
+    /** Used when a list holds no media URLs at all (e.g. a player with no clips). */
+    freshWithoutMedia: 55 * MINUTE,
+    retain: 6 * HOUR,
+  },
+  /** Metadata is kept past deletion so an expired share link can answer 410, not 404. */
+  clipMetadata: { retainPastDeletion: 30 * DAY },
+  /** Upper bound on upstream pages walked to find one clip, to protect the shared budget. */
+  maxPagesPerClipLookup: 5,
+} as const;
+
+export const keys = {
+  xuid: (gamertag: string) => `xuid:${gamertag.toLowerCase()}`,
+  profile: (xuid: string) => `profile:${xuid}`,
+  clips: (xuid: string) => `clips:${xuid}`,
+  clip: (xuid: string, clipId: string) => `clip:${xuid}:${clipId}`,
+};
+
+export interface PlayerClips {
+  xuid: string;
+  access: ClipPage['access'];
+  total: number;
+  clips: GameClipInfo[];
+}
+
+/**
+ * Orchestrates provider calls and caching. One instance per request: it carries
+ * the request's API key and clock.
+ */
+export class ClipService {
+  constructor(
+    private readonly provider: IXboxDataProvider,
+    private readonly cache: Cache,
+    private readonly apiKey: string,
+    private readonly now: () => number,
+  ) {}
+
+  async resolveXuid(id: PlayerIdentifier): Promise<string> {
+    if (id.kind === 'xuid') return id.xuid;
+    const xuid = await this.cache.readThrough(keys.xuid(id.gamertag), async () => {
+      const found = await this.provider.resolveGamertag(this.apiKey, id.gamertag);
+      if (!found) return null;
+      const now = this.now();
+      return { value: found, freshUntil: now + POLICY.xuid.fresh, retainUntil: now + POLICY.xuid.retain };
+    });
+    if (!xuid) throw new AppError('PLAYER_NOT_FOUND');
+    return xuid;
+  }
+
+  async getProfile(id: PlayerIdentifier): Promise<XboxUserProfile> {
+    const xuid = await this.resolveXuid(id);
+    const profile = await this.cache.readThrough(keys.profile(xuid), async () => {
+      const found = await this.provider.getProfile(this.apiKey, xuid);
+      if (!found) return null;
+      const now = this.now();
+      return { value: found, freshUntil: now + POLICY.profile.fresh, retainUntil: now + POLICY.profile.retain };
+    });
+    if (!profile) throw new AppError('PLAYER_NOT_FOUND');
+    return profile;
+  }
+
+  /** The cached list is never limited; `limit` slices on the way out (PLAN-v1.md §3). */
+  async getClips(id: PlayerIdentifier, limit: number): Promise<PlayerClips> {
+    const xuid = await this.resolveXuid(id);
+    const page = await this.firstPage(xuid);
+    return { xuid, access: page.access, total: page.clips.length, clips: page.clips.slice(0, limit) };
+  }
+
+  /**
+   * One clip with a playable URL (PLAN-v1.md §5, "Resolving a clip for playback").
+   * Records the clip's metadata on first sight, for share previews and 410s.
+   */
+  async getClip(xuid: string, clipId: string): Promise<GameClipInfo> {
+    const clip = await this.findClip(xuid, clipId);
+    if (!clip) throw await this.missingClipError(xuid, clipId);
+    if (!(await this.cache.read(keys.clip(xuid, clipId)))) await this.storeMetadata(clip);
+    return clip;
+  }
+
+  /** Metadata for a share preview: from cache when possible, else via a full lookup. */
+  async getClipMetadata(xuid: string, clipId: string): Promise<ClipMetadata> {
+    const cached = await this.cache.read<ClipMetadata>(keys.clip(xuid, clipId));
+    if (cached) {
+      if (Date.parse(cached.value.availableUntil) <= this.now()) throw new AppError('CLIP_EXPIRED');
+      return cached.value;
+    }
+    return toMetadata(await this.getClip(xuid, clipId));
+  }
+
+  private async firstPage(xuid: string): Promise<ClipPage> {
+    const page = await this.cache.readThrough(
+      keys.clips(xuid),
+      async () => {
+        const fetched = await this.provider.getClips(this.apiKey, xuid);
+        return { value: fetched, freshUntil: this.clipsFreshUntil(fetched), retainUntil: this.now() + POLICY.clips.retain };
+      },
+      (stale) => this.withoutExpiredMedia(stale),
+    );
+    // The loader never returns null, so neither does readThrough here.
+    return page!;
+  }
+
+  private async findClip(xuid: string, clipId: string): Promise<GameClipInfo | null> {
+    const first = await this.firstPage(xuid);
+    const hit = first.clips.find((c) => c.clipId === clipId);
+    if (hit) return hit;
+
+    // Older clips sit on later pages. These pages are not cached: only the first
+    // page backs the player's shelf, and the walk is bounded.
+    let token = first.continuationToken;
+    for (let pages = 1; token && pages < POLICY.maxPagesPerClipLookup; pages++) {
+      const page = await this.provider.getClips(this.apiKey, xuid, token);
+      const found = page.clips.find((c) => c.clipId === clipId);
+      if (found) return found;
+      token = page.continuationToken;
+    }
+    return null;
+  }
+
+  private async missingClipError(xuid: string, clipId: string): Promise<AppError> {
+    const known = await this.cache.read<ClipMetadata>(keys.clip(xuid, clipId));
+    if (known && Date.parse(known.value.availableUntil) <= this.now()) return new AppError('CLIP_EXPIRED');
+    return new AppError('CLIP_NOT_FOUND');
+  }
+
+  private async storeMetadata(clip: GameClipInfo): Promise<void> {
+    const deletion = Date.parse(clip.availableUntil);
+    const retainUntil = deletion + POLICY.clipMetadata.retainPastDeletion;
+    if (retainUntil <= this.now()) return;
+    await this.cache.write(keys.clip(clip.xuid, clip.clipId), toMetadata(clip), deletion, retainUntil);
+  }
+
+  /** Fresh until shortly before the earliest URL expires, so no cached URL is served dead. */
+  private clipsFreshUntil(page: ClipPage): number {
+    const expiries = page.clips.flatMap((c) => (c.media ? [Date.parse(c.media.expiresAt)] : []));
+    if (expiries.length === 0) return this.now() + POLICY.clips.freshWithoutMedia;
+    return Math.min(...expiries) - POLICY.clips.expiryMargin;
+  }
+
+  /** A stale list may be served for its metadata, but never with a dead media URL (PLAN-v1.md §3). */
+  private withoutExpiredMedia(page: ClipPage): ClipPage {
+    const now = this.now();
+    return {
+      ...page,
+      clips: page.clips.map((c) => (c.media && Date.parse(c.media.expiresAt) <= now ? { ...c, media: null } : c)),
+    };
+  }
+}
