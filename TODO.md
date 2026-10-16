@@ -5,9 +5,8 @@ any trade-off made.
 
 ## Deployment
 
-- [ ] Confirm the UI's Pages origin (`ALLOWED_ORIGINS`, `UI_ORIGIN`) and its
-      clip route. The share page redirects to `/clip/:xuid/:clipId`, a
-      contract with xbox-clips-ui.
+- [ ] Verify the client IP the preview endpoint sees over the UI's service
+      binding, and make the per-IP limit use the visitor's IP (PLAN §10).
 
 ## Open questions
 
@@ -20,7 +19,7 @@ any trade-off made.
       O1). The UI must retry the clip route once on a playback error. Widen
       `POLICY.clips.expiryMargin` if early deaths turn out to be common.
 - [ ] **Thumbnail as `og:image`.** Thumbnails are served as
-      `application/octet-stream`. Paste a deployed share link into Discord
+      `application/octet-stream`. Paste a deployed clip link into Discord
       and a messaging app and check the preview image renders.
 
 ## Later
@@ -34,6 +33,12 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **Link previews moved to the UI** (2026-10-16). Removed `/share` and
+      its HTML rendering; added `GET /api/v1/clips/:xuid/:clipId/preview`
+      returning cached metadata. CORS now allows `https://xboxclips.io`, the
+      Pages hostname and `https://*.xbox-clips-ui.pages.dev` previews, via
+      a matcher in `src/origins.ts`. `UI_ORIGIN` removed.
 
 - [x] **First deploy** (2026-10-16). Live at
       `https://xbox-clips-api.xbox-clips-api.workers.dev`. KV namespace

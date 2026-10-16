@@ -11,7 +11,6 @@ const NOW = Date.parse('2026-10-16T12:00:00.000Z');
 const XUID = '2533274900000001';
 const CLIP_A = 'aaaaaaaa-0000-4000-8000-000000000001';
 const CLIP_B = 'bbbbbbbb-0000-4000-8000-000000000002';
-const UI = 'https://xbox-clips-ui.pages.dev';
 
 // KV persists across tests in this pool, so each test starts from an empty namespace.
 beforeEach(async () => {
@@ -70,6 +69,14 @@ describe('basics', () => {
     expect(allowed.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
     const denied = await get('/health', { Origin: 'https://evil.example' });
     expect(denied.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  it('allows the UI domain and its preview deployments', async () => {
+    const { get } = setup();
+    for (const origin of ['https://xboxclips.io', 'https://feature-x.xbox-clips-ui.pages.dev', 'https://3f2a1b9c.xbox-clips-ui.pages.dev']) {
+      const res = await get('/health', { Origin: origin });
+      expect(res.headers.get('access-control-allow-origin')).toBe(origin);
+    }
   });
 
   it('rejects malformed identifiers without calling upstream', async () => {
@@ -231,46 +238,51 @@ describe('single clip', () => {
   });
 });
 
-describe('share', () => {
-  it('renders Open Graph tags and redirects to the UI', async () => {
+describe('preview', () => {
+  it('returns metadata without a media URL or view count', async () => {
     const { get, provider } = setup();
-    withClips(provider, page([makeClip({ clipId: CLIP_A, xuid: XUID, caption: 'Big <win> & "more"' })]));
-    const res = await get(`/share/${XUID}/${CLIP_A}`);
+    withClips(provider, page([makeClip({ clipId: CLIP_A, xuid: XUID, caption: 'Big win' })]));
+    const res = await get(`/api/v1/clips/${XUID}/${CLIP_A}/preview`);
     expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/html');
-    const html = await res.text();
-    expect(html).toContain('<meta property="og:title" content="Big &#60;win&#62; &#38; &#34;more&#34;">');
-    expect(html).toContain(`<meta property="og:image" content="https://example.test/${CLIP_A}.png">`);
-    expect(html).toContain(`url=${UI}/clip/${XUID}/${CLIP_A}`);
-    expect(html).not.toContain('.mp4');
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ clipId: CLIP_A, xuid: XUID, caption: 'Big win', thumbnailUrl: `https://example.test/${CLIP_A}.png` });
+    expect(body).not.toHaveProperty('media');
+    expect(body).not.toHaveProperty('views');
   });
 
   it('serves repeat previews from cached metadata without calling upstream', async () => {
     const { get, provider, advance } = setup();
     withClips(provider, page([makeClip({ clipId: CLIP_A, xuid: XUID })]));
-    await get(`/share/${XUID}/${CLIP_A}`);
+    await get(`/api/v1/clips/${XUID}/${CLIP_A}/preview`);
 
     advance(24 * 60 * 60 * 1000); // list and URLs long expired; metadata still valid
-    await get(`/share/${XUID}/${CLIP_A}`);
+    const res = await get(`/api/v1/clips/${XUID}/${CLIP_A}/preview`);
+    expect(res.status).toBe(200);
     expect(provider.calls.getClips).toBe(1);
   });
 
-  it('renders an HTML fallback for expired and unknown clips', async () => {
+  it('answers 410 for an expired clip, 404 for an unknown one and 400 for a malformed id', async () => {
     const { get, provider, advance } = setup();
     withClips(provider, page([makeClip({ clipId: CLIP_A, xuid: XUID, availableUntil: '2026-10-20T00:00:00.000Z' })]));
-    await get(`/share/${XUID}/${CLIP_A}`);
+    await get(`/api/v1/clips/${XUID}/${CLIP_A}/preview`);
     advance(5 * 24 * 60 * 60 * 1000);
 
-    const expired = await get(`/share/${XUID}/${CLIP_A}`);
+    const expired = await get(`/api/v1/clips/${XUID}/${CLIP_A}/preview`);
     expect(expired.status).toBe(410);
-    expect(await expired.text()).toContain('This clip has expired on Xbox');
+    expect(await errorCode(expired)).toBe('CLIP_EXPIRED');
 
-    const unknown = await get(`/share/${XUID}/${CLIP_B}`);
+    const unknown = await get(`/api/v1/clips/${XUID}/${CLIP_B}/preview`);
     expect(unknown.status).toBe(404);
-    expect(await unknown.text()).toContain('Clip unavailable');
+    expect(await errorCode(unknown)).toBe('CLIP_NOT_FOUND');
 
-    const malformed = await get(`/share/${XUID}/not-a-clip`);
+    const malformed = await get(`/api/v1/clips/${XUID}/not-a-clip/preview`);
     expect(malformed.status).toBe(400);
-    expect(malformed.headers.get('content-type')).toContain('text/html');
+    expect(await errorCode(malformed)).toBe('INVALID_IDENTIFIER');
+  });
+
+  it('no longer serves the old /share route', async () => {
+    const res = await setup().get(`/share/${XUID}/${CLIP_A}`);
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe('NOT_FOUND');
   });
 });

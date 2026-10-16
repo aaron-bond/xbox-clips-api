@@ -7,11 +7,10 @@
   // Non-secret configuration. XBL_API_KEY is a secret: `wrangler secret put XBL_API_KEY`
   // in production, `.dev.vars` locally. Never add it here - vars are committed in plain text.
   "vars": {
-    // Comma-separated. The deployed Pages origin plus local UI development. Never a
+    // Comma-separated: the UI's domain, its Pages hostname and preview deployments, and
+    // local UI development. `https://*.host` matches subdomains of host only. Never a bare
     // wildcard: the shared upstream budget is worth protecting from other sites.
-    "ALLOWED_ORIGINS": "https://xbox-clips-ui.pages.dev,http://localhost:5173",
-    // Where /share/:xuid/:clipId redirects human visitors.
-    "UI_ORIGIN": "https://xbox-clips-ui.pages.dev"
+    "ALLOWED_ORIGINS": "https://xboxclips.io,https://xbox-clips-ui.pages.dev,https://*.xbox-clips-ui.pages.dev,http://localhost:5173"
   },
 
   // Namespace "xbox-clips-api-cache". The binding name is what the code uses (env.CACHE).

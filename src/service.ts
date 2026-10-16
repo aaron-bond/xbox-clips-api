@@ -88,7 +88,7 @@ export class ClipService {
 
   /**
    * One clip with a playable URL (PLAN-v1.md §5, "Resolving a clip for playback").
-   * Records the clip's metadata on first sight, for share previews and 410s.
+   * Records the clip's metadata on first sight, for link previews and 410s.
    */
   async getClip(xuid: string, clipId: string): Promise<GameClipInfo> {
     const clip = await this.findClip(xuid, clipId);
@@ -97,7 +97,7 @@ export class ClipService {
     return clip;
   }
 
-  /** Metadata for a share preview: from cache when possible, else via a full lookup. */
+  /** Metadata for a link preview: from cache when possible, else via a full lookup. */
   async getClipMetadata(xuid: string, clipId: string): Promise<ClipMetadata> {
     const cached = await this.cache.read<ClipMetadata>(keys.clip(xuid, clipId));
     if (cached) {

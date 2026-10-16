@@ -22,7 +22,7 @@ response cache; the browser streams media straight from the Xbox CDN.
 | `src/provider/openxbl.ts` | HTTP client: envelope, status mapping, logging. |
 | `src/provider/openxbl-transform.ts` | Raw payload → domain types. Raw shapes documented here. |
 | `src/domain.ts` | Domain types. Nothing outside `src/provider/` sees raw payloads. |
-| `src/share.ts` | Share page HTML (Open Graph tags + redirect). |
+| `src/origins.ts` | CORS allow-list matching, including `https://*.host` wildcards. |
 | `src/validation.ts`, `src/errors.ts` | Input validation; public error codes. |
 | `test/` | Vitest in the Workers runtime. `FakeProvider` replaces upstream. |
 

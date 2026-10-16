@@ -202,9 +202,20 @@ genuinely bad at (§4). Read the real numbers instead.
 
 **CORS is required, not optional.** The UI is served from a different
 origin than the Worker, so without CORS middleware the browser blocks
-every call and nothing works at all. Allowed origins are the deployed
-Pages origin plus localhost for development — not a wildcard, since this
-key's budget is worth protecting from other people's sites.
+every call and nothing works at all. Allowed origins are the UI's domain
+(`https://xboxclips.io`), its Pages hostname, its preview deployments, and
+localhost for development. Preview hostnames change per branch and per
+commit, so they are allowed with a subdomain wildcard,
+`https://*.xbox-clips-ui.pages.dev`: it matches subdomains of that one
+Pages project, over HTTPS, with no port, and nothing else. There is never
+a bare wildcard, since this key's budget is worth protecting from other
+people's sites.
+
+**Link previews are rendered by the UI, not the API.** A share link is the
+UI's own clip page URL, `https://xboxclips.io/clip/:xuid/:clipId`. The UI
+adds the per-clip Open Graph tags to that page itself, using metadata from
+`GET /api/v1/clips/:xuid/:clipId/preview`. The API serves JSON only and
+renders no HTML.
 
 **Both identifiers are validated before use.** `identifier` and `xuid`
 are interpolated into cache keys and upstream URLs, so unvalidated input
@@ -303,8 +314,8 @@ but per-datacenter rather than global — in front of KV. Not built in v1.
 **Why Pages for the UI.** Share links need Open Graph meta tags. A static
 single-page app cannot emit per-clip `og:*` tags, so a link pasted into
 Discord or WhatsApp unfurls as a bare URL — which undercuts the entire
-point of a sharing hub. Pages can serve a per-clip share route with real
-meta tags, and colocates the UI with the Worker on one platform. The
+point of a sharing hub. A Pages Function on the UI's clip route adds the
+real tags, and Pages keeps the UI on the same platform as the Worker. The
 repository itself stays on GitHub; only the hosting differs.
 
 ---
@@ -317,8 +328,8 @@ Base path `/api/v1`.
 | :--- | :--- |
 | `GET /api/v1/players/:identifier` | Profile. Accepts a gamertag or an XUID. |
 | `GET /api/v1/players/:identifier/clips?limit=` | That player's clips. |
-| `GET /api/v1/clips/:xuid/:clipId` | One clip, with a media URL valid for playback. Powers share links. |
-| `GET /share/:xuid/:clipId` | HTML carrying OG tags, redirecting to the UI. Not JSON. Rendered from cached metadata. |
+| `GET /api/v1/clips/:xuid/:clipId` | One clip, with a media URL valid for playback. Powers the UI's clip page. |
+| `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, never a media URL. Backs the UI's link previews. Served from cached metadata. |
 | `GET /health` | Liveness. |
 
 ### Cache key schema
@@ -336,13 +347,13 @@ good for. The 5-minute margin leaves time for playback to start before
 the URL dies. The 6-hour KV retention costs no extra writes, because the
 entry is rewritten on every refetch anyway.
 
-`clip:` entries are written lazily, on the first `/clips` or `/share`
+`clip:` entries are written lazily, on the first clip or preview
 request for that clip, not for every clip in a fetched list. That keeps
 each list fetch to a single KV write.
 
 ### Resolving a clip for playback
 
-`GET /api/v1/clips/:xuid/:clipId` and the UI behind a share link work
+`GET /api/v1/clips/:xuid/:clipId`, which the UI's clip page calls, works
 like this:
 
 1. If `clips:{xuid}` is cached, still fresh, and holds the clip, return
@@ -366,13 +377,14 @@ days), so the UI can say how long a clip will stay up. Xbox does not
 publish the exact deletion time, so this is an estimate and is labelled
 as one in the UI.
 
-### Share previews
+### Link previews
 
-`GET /share/:xuid/:clipId` needs only the clip's title, game, caption and
-thumbnail, all of which are stable. It renders from `clip:{xuid}:{clipId}`
-and only calls upstream on a cache miss. A link pasted into a chat app is
-therefore unfurled by the crawler without spending the shared budget,
-except the first time that clip is shared.
+`GET /api/v1/clips/:xuid/:clipId/preview` returns only the clip's title,
+game, caption, thumbnail and dates, all of which are stable. It reads
+`clip:{xuid}:{clipId}` first and only calls upstream on a cache miss. A
+link pasted into a chat app is therefore unfurled without spending the
+shared budget, except the first time that clip is previewed. It never
+returns a media URL or a view count.
 
 ### Serving stale under pressure
 
@@ -418,10 +430,6 @@ player has no clips" from "this player's clips are not public", so the UI
 can say something true instead of showing an empty shelf. The open case
 is confirmed: a non-owner key receives a public player's clips. What a
 restricted player returns is still unconfirmed — see O3.
-
-`/share` is the exception to the JSON envelope. It always answers with
-HTML, so a failed lookup still gives a person a page that sends them on
-to the UI, carrying the status code from this table.
 
 **Deleted clips get their own code.** `410 CLIP_EXPIRED` tells the UI
 the clip existed and has aged out on Xbox, so a share link can say that
@@ -547,7 +555,8 @@ working backlog; `CLAUDE.md` is the map of the code.
   and rejected once the local rate-limit counter was dropped, since
   atomic increments were its only real advantage here.
 - Pages rather than static hosting for the UI, so share links can carry
-  real Open Graph tags.
+  real Open Graph tags. The UI renders them; the API serves metadata
+  through the preview endpoint (§3, §5).
 - Hono for routing (§4), rather than a hand-rolled matcher: path params,
   CORS and a single consistent error envelope are exactly the boilerplate
   it removes, and §6 depends on that envelope being uniform.
@@ -570,9 +579,11 @@ working backlog; `CLAUDE.md` is the map of the code.
 - **Thumbnail content type.** Thumbnails are served as
   `application/octet-stream`. Whether chat-app crawlers accept that as an
   `og:image` is untested; check once deployed.
-- **UI contract.** The share page redirects to `/clip/:xuid/:clipId` on
-  the UI origin, and the Pages origin is assumed to be
-  `xbox-clips-ui.pages.dev`. Both must match what xbox-clips-ui builds.
+- **Client IP over a service binding.** The UI's preview function calls
+  the preview endpoint over a service binding, so the per-IP limit sees
+  the function, not the visitor. What `CF-Connecting-IP` the API receives
+  on such a request, and whether a forwarded value can be trusted, is
+  verified when the function is built.
 
 ### Next steps, in order
 

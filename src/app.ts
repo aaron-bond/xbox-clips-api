@@ -4,8 +4,8 @@ import { Cache } from './cache';
 import type { AppEnv } from './env';
 import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
+import { isAllowedOrigin, parseAllowedOrigins } from './origins';
 import { ClipService } from './service';
-import { renderShareFallback, renderSharePage, uiClipUrl } from './share';
 import { parseClipId, parseLimit, parsePlayerIdentifier, parseXuid } from './validation';
 
 export interface AppDeps {
@@ -23,7 +23,7 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
   app.use(
     '*',
     cors({
-      origin: (origin, c: AppContext) => (allowedOrigins(c.env).includes(origin) ? origin : null),
+      origin: (origin, c: AppContext) => (isAllowedOrigin(origin, parseAllowedOrigins(c.env.ALLOWED_ORIGINS)) ? origin : null),
       allowMethods: ['GET', 'OPTIONS'],
       maxAge: 86400,
     }),
@@ -37,7 +37,6 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
     await next();
   };
   app.use('/api/*', rateLimit);
-  app.use('/share/*', rateLimit);
 
   app.get('/health', (c) => c.json({ status: 'ok' }));
 
@@ -57,21 +56,12 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
     return c.json(await service(c).getClip(xuid, clipId));
   });
 
-  // HTML, not JSON: failures render a page that still sends people on to the UI.
-  app.get('/share/:xuid/:clipId', async (c) => {
-    const rawXuid = c.req.param('xuid');
-    const rawClipId = c.req.param('clipId');
-    const target = uiClipUrl(c.env.UI_ORIGIN, encodeURIComponent(rawXuid), encodeURIComponent(rawClipId));
-    try {
-      const clip = await service(c).getClipMetadata(parseXuid(rawXuid), parseClipId(rawClipId));
-      return c.html(renderSharePage(clip, target));
-    } catch (err) {
-      if (!(err instanceof AppError)) throw err;
-      if (err.code === 'RATE_LIMITED') throw err;
-      const heading = err.code === 'CLIP_EXPIRED' ? 'This clip has expired on Xbox' : 'Clip unavailable';
-      if (err.retryAfter) c.header('Retry-After', err.retryAfter);
-      return c.html(renderShareFallback(heading, target), err.status);
-    }
+  // Metadata only, never a media URL: backs the UI's link previews, which must not
+  // spend upstream calls each time a link is unfurled (PLAN-v1.md §5).
+  app.get('/api/v1/clips/:xuid/:clipId/preview', async (c) => {
+    const xuid = parseXuid(c.req.param('xuid'));
+    const clipId = parseClipId(c.req.param('clipId'));
+    return c.json(await service(c).getClipMetadata(xuid, clipId));
   });
 
   app.notFound((c) => {
@@ -87,8 +77,4 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
   });
 
   return app;
-}
-
-function allowedOrigins(env: AppEnv): string[] {
-  return env.ALLOWED_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
 }

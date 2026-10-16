@@ -19,7 +19,7 @@ frontend is [xbox-clips-ui](https://github.com/aaron-bond/xbox-clips-ui).
 | `GET /api/v1/players/:identifier` | Profile. Gamertag or XUID. |
 | `GET /api/v1/players/:identifier/clips?limit=` | `{ xuid, access, total, clips }`. `access` is `public` or `restricted`. |
 | `GET /api/v1/clips/:xuid/:clipId` | One clip with a playable media URL. |
-| `GET /share/:xuid/:clipId` | HTML with Open Graph tags, redirecting to the UI. |
+| `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, no media URL. Backs the UI's link previews. |
 | `GET /health` | `{ status: "ok" }` |
 
 Every error has the shape
@@ -70,5 +70,6 @@ One-time setup:
 3. In the GitHub repository settings, add the secrets
    `CLOUDFLARE_API_TOKEN` (with Workers edit permission) and
    `CLOUDFLARE_ACCOUNT_ID`.
-4. Check `ALLOWED_ORIGINS` and `UI_ORIGIN` in `wrangler.jsonc` against the
-   deployed UI's origin.
+4. Check `ALLOWED_ORIGINS` in `wrangler.jsonc` against the UI's origins.
+   Entries are exact origins, or `https://*.host` for any subdomain of
+   `host`.
