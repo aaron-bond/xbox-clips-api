@@ -5,6 +5,9 @@ any trade-off made.
 
 ## Open questions
 
+- [ ] **Career CPU time in production.** Check the Worker's CPU time on
+      `/career` for heavy players after release (about 5 ms locally, against a
+      10 ms free-plan limit). Move to Workers Paid if it runs close.
 - [ ] **O3: restricted privacy. Deferred until a user reports a problem.** Call the clips endpoint for a player with
       restricted capture privacy and record what comes back. The provider
       currently treats `403` and `404` as `restricted`, and an empty `200` as
@@ -28,6 +31,11 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **Career facts** (2026-10-17). `GET /api/v1/players/:identifier/career`
+      reads the title history once a day per player and caches four derived
+      facts (a few hundred bytes, not the 1 MB source). Hidden histories cached
+      as null.
 
 - [x] **Richer profiles** (2026-10-17). Profiles now include bio, location,
       tenure (years on Xbox) and reputation, from the same upstream call.

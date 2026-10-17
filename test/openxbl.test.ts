@@ -3,6 +3,7 @@ import { AppError } from '../src/errors';
 import { OpenXblProvider } from '../src/provider/openxbl';
 import { accountResponse, clipsResponse, searchResponse, XUID } from './fixtures/openxbl';
 import { mostPlayedResponse } from './fixtures/most-played';
+import { titlesResponse } from './fixtures/titles';
 
 function fakeFetch(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -47,6 +48,17 @@ describe('OpenXblProvider', () => {
     const games = await new OpenXblProvider(fetch).getMostPlayedGames('k');
     expect(fetch.mock.calls[0]![0]).toBe('https://api.xbl.io/v2/marketplace/most-played');
     expect(games).toHaveLength(4);
+  });
+
+  it('fetches title history and keeps only the career facts', async () => {
+    const fetch = fakeFetch(200, titlesResponse);
+    const stats = await new OpenXblProvider(fetch).getCareerStats('k', XUID);
+    expect(fetch.mock.calls[0]![0]).toBe(`https://api.xbl.io/v2/titles/${XUID}`);
+    expect(stats?.biggestHaul?.name).toBe('Titanfall');
+  });
+
+  it.each([403, 404])('treats a %i title history as unavailable', async (status) => {
+    expect(await new OpenXblProvider(fakeFetch(status, '')).getCareerStats('k', XUID)).toBeNull();
   });
 
   it('passes the continuation token through', async () => {

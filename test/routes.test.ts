@@ -336,3 +336,40 @@ describe('games', () => {
     expect(((await res.json()) as { games: Game[] }).games).toHaveLength(1);
   });
 });
+
+describe('career', () => {
+  const stats = {
+    nowPlaying: { titleId: '1', name: 'Recent', imageUrl: null, gamerscore: 10, totalGamerscore: 100, percent: 10, lastPlayed: '2026-10-11T00:00:00Z' },
+    biggestHaul: null, onTheBrink: null, platforms: [{ platform: 'Xbox One', games: 3 }], gamesCounted: 3, capped: false,
+  };
+
+  it('serves career facts, cached for a day', async () => {
+    const { get, provider, advance } = setup();
+    provider.careers.set(XUID, stats);
+    const res = await get(`/api/v1/players/${XUID}/career`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ xuid: XUID, stats });
+    advance(23 * 60 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/career`);
+    expect(provider.calls.getCareerStats).toBe(1);
+    advance(2 * 60 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/career`);
+    expect(provider.calls.getCareerStats).toBe(2);
+  });
+
+  it('caches a hidden history as null instead of refetching it', async () => {
+    const { get, provider } = setup();
+    const first = (await (await get(`/api/v1/players/${XUID}/career`)).json()) as { stats: unknown };
+    expect(first.stats).toBeNull();
+    await get(`/api/v1/players/${XUID}/career`);
+    expect(provider.calls.getCareerStats).toBe(1);
+  });
+
+  it('resolves a gamertag first', async () => {
+    const { get, provider } = setup();
+    provider.gamertags.set('testplayer', XUID);
+    provider.careers.set(XUID, stats);
+    const body = (await (await get('/api/v1/players/TestPlayer/career')).json()) as { xuid: string };
+    expect(body.xuid).toBe(XUID);
+  });
+});

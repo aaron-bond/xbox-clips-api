@@ -1,13 +1,15 @@
-import type { ClipPage, Game, XboxUserProfile } from '../domain';
+import type { CareerStats, ClipPage, Game, XboxUserProfile } from '../domain';
 import { AppError } from '../errors';
 import {
   pickSearchMatch,
   toClipPage,
+  toCareerStats,
   toMostPlayed,
   toProfile,
   type RawAccount,
   type RawClipList,
   type RawMostPlayed,
+  type RawTitleHistory,
   type RawSearch,
 } from './openxbl-transform';
 import type { IXboxDataProvider } from './types';
@@ -56,6 +58,18 @@ export class OpenXblProvider implements IXboxDataProvider {
     const res = await this.get(apiKey, '/marketplace/most-played');
     this.expectOk(res, 'marketplace/most-played');
     return toMostPlayed(res.content as RawMostPlayed);
+  }
+
+  /**
+   * Reads the player's title history (up to about 1 MB) and keeps only the
+   * derived facts. A hidden history (403/404) is not an error: the facts are
+   * simply unavailable.
+   */
+  async getCareerStats(apiKey: string, xuid: string): Promise<CareerStats | null> {
+    const res = await this.get(apiKey, `/titles/${xuid}`);
+    if (res.status === 403 || res.status === 404) return null;
+    this.expectOk(res, 'titles');
+    return toCareerStats(res.content as RawTitleHistory);
   }
 
   private async get(apiKey: string, path: string): Promise<UpstreamResult> {

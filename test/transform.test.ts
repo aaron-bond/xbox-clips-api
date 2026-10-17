@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed, type RawTitleHistory } from '../src/provider/openxbl-transform';
+import { titlesResponse } from './fixtures/titles';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { accountResponse, CLIP_ID, clipsResponse, EXPIRATION, rawClip, searchResponse, XUID } from './fixtures/openxbl';
 
@@ -150,5 +151,41 @@ describe('pickDescription', () => {
     const out = pickDescription('Tagline', full);
     expect(out.endsWith('.')).toBe(true);
     expect(out.length).toBeLessThanOrEqual(600);
+  });
+});
+
+describe('toCareerStats (real payload, trimmed)', () => {
+  const stats = toCareerStats(titlesResponse.content as unknown as RawTitleHistory);
+
+  it('picks the most recently played game', () => {
+    expect(stats.nowPlaying).toMatchObject({ name: "Assassin's Creed Black Flag Resynced", gamerscore: 330, totalGamerscore: 1000, percent: 33 });
+    expect(stats.nowPlaying!.imageUrl).toMatch(/^https:\/\/store-images\.s-microsoft\.com\//);
+  });
+
+  it('picks the biggest gamerscore haul', () => {
+    expect(stats.biggestHaul).toMatchObject({ name: 'Titanfall', gamerscore: 1260, totalGamerscore: 2000 });
+  });
+
+  it('picks the game nearest to 100%, ignoring completed ones', () => {
+    expect(stats.onTheBrink).toMatchObject({ name: "Hellblade: Senua's Sacrifice", percent: 90 });
+  });
+
+  it('counts games per platform, oldest generation first', () => {
+    expect(stats.platforms).toEqual([
+      { platform: 'Xbox 360', games: 3 },
+      { platform: 'Xbox One', games: 6 },
+      { platform: 'Xbox Series X|S', games: 8 },
+      { platform: 'PC', games: 1 },
+    ]);
+  });
+
+  it('flags a history cut off at 1,000 games', () => {
+    expect(stats.capped).toBe(false);
+    const many = { titles: Array.from({ length: 1000 }, (_, i) => ({ titleId: String(i), name: `G${i}`, type: 'Game' })) };
+    expect(toCareerStats(many).capped).toBe(true);
+  });
+
+  it('copes with an empty history', () => {
+    expect(toCareerStats({})).toEqual({ nowPlaying: null, biggestHaul: null, onTheBrink: null, platforms: [], gamesCounted: 0, capped: false });
   });
 });

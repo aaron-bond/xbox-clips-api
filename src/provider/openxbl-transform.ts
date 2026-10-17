@@ -1,4 +1,4 @@
-import type { ClipPage, Game, GameClipInfo, Reputation, XboxUserProfile } from '../domain';
+import type { CareerGame, CareerStats, ClipPage, Game, GameClipInfo, Reputation, XboxUserProfile } from '../domain';
 
 /**
  * Raw OpenXBL payload shapes, as observed in live responses on 2026-10-16
@@ -202,4 +202,89 @@ export function toMostPlayed(raw: RawMostPlayed): Game[] {
     });
   }
   return games;
+}
+
+export interface RawTitle {
+  titleId?: string;
+  name?: string;
+  type?: string;
+  devices?: string[];
+  displayImage?: string;
+  achievement?: { currentGamerscore?: number; totalGamerscore?: number; progressPercentage?: number };
+  titleHistory?: { lastTimePlayed?: string };
+}
+export interface RawTitleHistory {
+  titles?: RawTitle[];
+}
+
+/** Xbox returns at most this many titles; a full list means older ones are cut off. */
+export const TITLE_HISTORY_LIMIT = 1000;
+
+/** Store platform codes to names, oldest generation first. Other devices are not counted. */
+const PLATFORMS: [string, string[]][] = [
+  ['Xbox 360', ['Xbox360']],
+  ['Xbox One', ['XboxOne']],
+  ['Xbox Series X|S', ['XboxSeries']],
+  ['PC', ['PC', 'Win32']],
+];
+
+function toCareerGame(t: RawTitle): CareerGame {
+  const a = t.achievement ?? {};
+  return {
+    titleId: t.titleId ?? '',
+    name: t.name ?? '',
+    // Image URLs arrive as http://; the same host serves https.
+    imageUrl: t.displayImage ? t.displayImage.replace(/^http:/, 'https:') : null,
+    gamerscore: a.currentGamerscore ?? 0,
+    totalGamerscore: a.totalGamerscore ?? 0,
+    percent: a.progressPercentage ?? 0,
+    lastPlayed: t.titleHistory?.lastTimePlayed ?? null,
+  };
+}
+
+function best<T>(items: T[], score: (x: T) => number): T | null {
+  let top: T | null = null;
+  let topScore = -Infinity;
+  for (const x of items) {
+    const s = score(x);
+    if (s > topScore) {
+      top = x;
+      topScore = s;
+    }
+  }
+  return top;
+}
+
+/**
+ * The four history-based career facts (PLAN-v1.md §5). Games only; apps are
+ * left out. "On the brink" ignores completed games and games with no
+ * gamerscore earned, and breaks ties toward the bigger game.
+ */
+export function toCareerStats(raw: RawTitleHistory): CareerStats {
+  const all = raw.titles ?? [];
+  const games = all.filter((t) => t.name && (t.type ?? 'Game') === 'Game');
+  const time = (t: RawTitle) => Date.parse(t.titleHistory?.lastTimePlayed ?? '') || 0;
+  const earned = (t: RawTitle) => t.achievement?.currentGamerscore ?? 0;
+  const total = (t: RawTitle) => t.achievement?.totalGamerscore ?? 0;
+
+  const recent = best(games.filter((t) => time(t) > 0), time);
+  const haul = best(games.filter((t) => earned(t) > 0), earned);
+  const brink = best(
+    games.filter((t) => total(t) > 0 && earned(t) > 0 && earned(t) < total(t)),
+    (t) => (t.achievement?.progressPercentage ?? 0) * 100_000 + total(t),
+  );
+
+  const platforms = PLATFORMS.map(([platform, codes]) => ({
+    platform,
+    games: games.filter((t) => (t.devices ?? []).some((d) => codes.includes(d))).length,
+  })).filter((p) => p.games > 0);
+
+  return {
+    nowPlaying: recent ? toCareerGame(recent) : null,
+    biggestHaul: haul ? toCareerGame(haul) : null,
+    onTheBrink: brink ? toCareerGame(brink) : null,
+    platforms,
+    gamesCounted: games.length,
+    capped: all.length >= TITLE_HISTORY_LIMIT,
+  };
 }

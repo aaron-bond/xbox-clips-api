@@ -50,6 +50,12 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
     return c.json(await service(c).getClips(id, parseLimit(c.req.query('limit'))));
   });
 
+  // Career facts from the title history: one upstream call per player per day.
+  app.get('/api/v1/players/:identifier/career', async (c) => {
+    const id = parsePlayerIdentifier(c.req.param('identifier'));
+    return c.json(await service(c).getCareer(id));
+  });
+
   app.get('/api/v1/clips/:xuid/:clipId', async (c) => {
     const xuid = parseXuid(c.req.param('xuid'));
     const clipId = parseClipId(c.req.param('clipId'));

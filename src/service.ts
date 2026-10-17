@@ -1,5 +1,5 @@
 import { Cache } from './cache';
-import { toMetadata, type ClipMetadata, type ClipPage, type Game, type GameClipInfo, type XboxUserProfile } from './domain';
+import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameClipInfo, type XboxUserProfile } from './domain';
 import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
 import type { PlayerIdentifier } from './validation';
@@ -25,6 +25,8 @@ export const POLICY = {
   },
   /** Metadata is kept past deletion so an expired share link can answer 410, not 404. */
   clipMetadata: { retainPastDeletion: 30 * DAY },
+  /** Career facts change slowly; the source is about 1 MB, so fetch it at most daily. */
+  career: { fresh: 24 * HOUR, retain: 7 * DAY },
   /** The same for every visitor, so one upstream call per window serves all traffic. */
   mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
   /** Upper bound on upstream pages walked to find one clip, to protect the shared budget. */
@@ -39,6 +41,7 @@ export const keys = {
   clips: (xuid: string) => `clips:${xuid}`,
   clip: (xuid: string, clipId: string) => `clip:${xuid}:${clipId}`,
   mostPlayed: () => 'games:most-played',
+  career: (xuid: string) => `career:${xuid}`,
 };
 
 export interface PlayerClips {
@@ -110,6 +113,20 @@ export class ClipService {
       return cached.value;
     }
     return toMetadata(await this.getClip(xuid, clipId));
+  }
+
+  /**
+   * Career facts for the player page. Wrapped so a hidden history (null) is
+   * cached too, rather than refetched on every visit.
+   */
+  async getCareer(id: PlayerIdentifier): Promise<{ xuid: string; stats: CareerStats | null }> {
+    const xuid = await this.resolveXuid(id);
+    const entry = await this.cache.readThrough(keys.career(xuid), async () => {
+      const stats = await this.provider.getCareerStats(this.apiKey, xuid);
+      const now = this.now();
+      return { value: { stats }, freshUntil: now + POLICY.career.fresh, retainUntil: now + POLICY.career.retain };
+    });
+    return { xuid, stats: entry!.stats };
   }
 
   async getMostPlayed(): Promise<Game[]> {

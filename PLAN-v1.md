@@ -49,6 +49,7 @@ Base URL: **`https://api.xbl.io/v2`**.
 | `GET /v2/account/{xuid}` | Profile. Takes an XUID only. Returns `profileUsers[0]` with an `id` and a `settings` array of `{ id, value }` pairs (`Gamertag`, `Gamerscore`, `GameDisplayPicRaw`, `Bio`, `Location`, `TenureLevel`, `XboxOneRep`, …). |
 | `GET /v2/dvr/gameclips/{xuid}` | Clips for any player. Paginates via a `continuationToken` query parameter. |
 | `GET /v2/marketplace/most-played` | The Xbox Store's most-played games. The same for every caller. |
+| `GET /v2/titles/{xuid}` | A player's title history: up to 1,000 games with gamerscore progress, last played and platforms. About 1 MB for a heavy player. |
 
 Two further endpoints exist and are not used in v1:
 `GET /v2/dvr/gameclips` (the key owner's own clips) and
@@ -351,6 +352,7 @@ Base path `/api/v1`.
 | `GET /api/v1/players/:identifier/clips?limit=` | That player's clips. |
 | `GET /api/v1/clips/:xuid/:clipId` | One clip, with a media URL valid for playback. Powers the UI's clip page. |
 | `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, never a media URL. Backs the UI's link previews. Served from cached metadata. |
+| `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: career facts from the title history (now playing, biggest haul, nearest to 100%, platforms). `stats` is null when the history is hidden. |
 | `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
 | `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
 | `GET /health` | Liveness. |
@@ -362,6 +364,7 @@ Base path `/api/v1`.
 | `xuid:{gamertag_lower}` | XUID string | 30 days | The mapping is immutable, and Profile/Social is the strictest-limited upstream service. Cache it hard. |
 | `profile:v2:{xuid}` | `XboxUserProfile` | 2 hours | Gamerscore and presence drift, but nothing here is urgent. |
 | `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh until the earliest `expiration` in the list minus 5 minutes (about 55 min). Kept in KV for 6 hours. | Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
+| `career:{xuid}` | `{ stats }`, facts only | Fresh 24 hours, kept 7 days | The source is about 1 MB; only the derived facts (a few hundred bytes) are stored. A hidden history is cached as null too. |
 | `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
 | `clip:{xuid}:{clipId}` | Clip metadata **without** media URL | Valid until `datePublished` + 90 days. Kept in KV 30 days beyond that. | Title, game, caption, duration, thumbnail and dates never change, so share previews need no upstream call. The extra 30 days let an expired link answer `410` rather than `404`. |
 
@@ -400,6 +403,34 @@ Every clip response carries `availableUntil` (`datePublished` + 90
 days), so the UI can say how long a clip will stay up. Xbox does not
 publish the exact deletion time, so this is an estimate and is labelled
 as one in the UI.
+
+### Career facts
+
+`GET /v2/titles/{xuid}` returns up to 1,000 games, about 1 MB for a heavy
+player. The Worker reads it, derives four facts and stores only those:
+
+- **Now playing:** the most recently played game.
+- **Biggest haul:** the game with the most gamerscore earned.
+- **On the brink:** the game nearest to 100% that is not complete and has
+  some gamerscore earned; ties go to the bigger game.
+- **Platforms:** games played per platform (Xbox 360, Xbox One, Xbox Series
+  X|S, PC), oldest first. A game on several platforms counts on each.
+
+Apps are left out. When the history holds 1,000 titles it is flagged
+`capped`, since older games are then missing; the UI says "from their last
+1,000 games". A 403 or 404 means the history is hidden, and is returned and
+cached as null rather than as an error.
+
+**CPU:** reading the 1 MB and deriving the facts took about 5 ms on a
+development machine, against the free plan's 10 ms per request. Waiting for
+the download does not count. It runs at most once per player per day, and
+the largest possible payload is bounded by the 1,000-game limit. Production
+CPU time is watched after release; if heavy players come close to the limit,
+the Workers Paid plan (30 s) removes the concern.
+
+Other sources were sampled and rejected: per-achievement records (unordered,
+tens of thousands for a heavy player, no rarity) and player stats (no
+playtime value).
 
 ### Most-played games
 

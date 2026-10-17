@@ -89,6 +89,38 @@ export interface Game {
   boxArtUrl: string | null;
 }
 
+/** One game in a player's career facts. */
+export interface CareerGame {
+  titleId: string;
+  name: string;
+  /** Store image URL; resizes by query string (`?w=`). */
+  imageUrl: string | null;
+  gamerscore: number;
+  totalGamerscore: number;
+  /** 0-100. */
+  percent: number;
+  lastPlayed: string | null;
+}
+
+/**
+ * Facts derived from a player's title history (PLAN-v1.md §5). Only these are
+ * cached; the raw history (up to about 1 MB) is read once and discarded.
+ */
+export interface CareerStats {
+  /** The most recently played game. */
+  nowPlaying: CareerGame | null;
+  /** The game with the most gamerscore earned. */
+  biggestHaul: CareerGame | null;
+  /** The game nearest to 100% without being complete. */
+  onTheBrink: CareerGame | null;
+  /** Games played per platform, oldest generation first. */
+  platforms: { platform: string; games: number }[];
+  /** Games the facts were computed from. */
+  gamesCounted: number;
+  /** True when the history hit Xbox's 1,000-game limit, so older games are missing. */
+  capped: boolean;
+}
+
 /** Strips the fields that change, leaving what is safe to cache until deletion. */
 export function toMetadata(clip: GameClipInfo): ClipMetadata {
   const { views: _views, media: _media, ...metadata } = clip;
