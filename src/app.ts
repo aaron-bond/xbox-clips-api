@@ -6,7 +6,7 @@ import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
 import { isAllowedOrigin, parseAllowedOrigins } from './origins';
 import { ClipService } from './service';
-import { parseClipId, parseLimit, parsePlayerIdentifier, parseXuid } from './validation';
+import { parseClipId, parseLimit, parsePlayerIdentifier, parseProductId, parseXuid } from './validation';
 
 export interface AppDeps {
   provider: IXboxDataProvider;
@@ -62,6 +62,15 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
     const xuid = parseXuid(c.req.param('xuid'));
     const clipId = parseClipId(c.req.param('clipId'));
     return c.json(await service(c).getClipMetadata(xuid, clipId));
+  });
+
+  // The front page's most-played games, and one of them for the game page. Both come
+  // from one cached upstream call shared by every visitor (PLAN-v1.md §5).
+  app.get('/api/v1/games/most-played', async (c) => c.json({ games: await service(c).getMostPlayed() }));
+
+  app.get('/api/v1/games/:productId', async (c) => {
+    const productId = parseProductId(c.req.param('productId'));
+    return c.json(await service(c).getGame(productId));
   });
 
   app.notFound((c) => {

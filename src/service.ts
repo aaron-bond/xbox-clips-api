@@ -1,5 +1,5 @@
 import { Cache } from './cache';
-import { toMetadata, type ClipMetadata, type ClipPage, type GameClipInfo, type XboxUserProfile } from './domain';
+import { toMetadata, type ClipMetadata, type ClipPage, type Game, type GameClipInfo, type XboxUserProfile } from './domain';
 import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
 import type { PlayerIdentifier } from './validation';
@@ -25,6 +25,8 @@ export const POLICY = {
   },
   /** Metadata is kept past deletion so an expired share link can answer 410, not 404. */
   clipMetadata: { retainPastDeletion: 30 * DAY },
+  /** The same for every visitor, so one upstream call per window serves all traffic. */
+  mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
   /** Upper bound on upstream pages walked to find one clip, to protect the shared budget. */
   maxPagesPerClipLookup: 5,
 } as const;
@@ -34,6 +36,7 @@ export const keys = {
   profile: (xuid: string) => `profile:${xuid}`,
   clips: (xuid: string) => `clips:${xuid}`,
   clip: (xuid: string, clipId: string) => `clip:${xuid}:${clipId}`,
+  mostPlayed: () => 'games:most-played',
 };
 
 export interface PlayerClips {
@@ -105,6 +108,22 @@ export class ClipService {
       return cached.value;
     }
     return toMetadata(await this.getClip(xuid, clipId));
+  }
+
+  async getMostPlayed(): Promise<Game[]> {
+    const games = await this.cache.readThrough(keys.mostPlayed(), async () => {
+      const fetched = await this.provider.getMostPlayedGames(this.apiKey);
+      const now = this.now();
+      return { value: fetched, freshUntil: now + POLICY.mostPlayed.fresh, retainUntil: now + POLICY.mostPlayed.retain };
+    });
+    return games!;
+  }
+
+  /** One game from the cached ranking, for the game page. Costs no extra upstream call. */
+  async getGame(productId: string): Promise<Game> {
+    const game = (await this.getMostPlayed()).find((g) => g.productId === productId);
+    if (!game) throw new AppError('GAME_NOT_FOUND');
+    return game;
   }
 
   private async firstPage(xuid: string): Promise<ClipPage> {

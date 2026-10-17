@@ -1,4 +1,4 @@
-import type { ClipPage, XboxUserProfile } from '../domain';
+import type { ClipPage, Game, XboxUserProfile } from '../domain';
 
 /**
  * The single seam between the service and upstream (PLAN-v1.md §3). Routing and
@@ -19,4 +19,7 @@ export interface IXboxDataProvider {
 
   /** One page of the player's clips, newest first. */
   getClips(apiKey: string, xuid: string, continuationToken?: string): Promise<ClipPage>;
+
+  /** The Xbox Store's most-played games, first page, ranked, duplicates merged. */
+  getMostPlayedGames(apiKey: string): Promise<Game[]>;
 }

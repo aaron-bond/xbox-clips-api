@@ -48,6 +48,7 @@ Base URL: **`https://api.xbl.io/v2`**.
 | `GET /v2/search/{gamertag}` | Gamertag → XUID resolution. Fuzzy: returns near matches too. |
 | `GET /v2/account/{xuid}` | Profile. Takes an XUID only. Returns `profileUsers[0]` with an `id` and a `settings` array of `{ id, value }` pairs (`Gamertag`, `Gamerscore`, `GameDisplayPicRaw`, …). |
 | `GET /v2/dvr/gameclips/{xuid}` | Clips for any player. Paginates via a `continuationToken` query parameter. |
+| `GET /v2/marketplace/most-played` | The Xbox Store's most-played games. The same for every caller. |
 
 Two further endpoints exist and are not used in v1:
 `GET /v2/dvr/gameclips` (the key owner's own clips) and
@@ -330,6 +331,8 @@ Base path `/api/v1`.
 | `GET /api/v1/players/:identifier/clips?limit=` | That player's clips. |
 | `GET /api/v1/clips/:xuid/:clipId` | One clip, with a media URL valid for playback. Powers the UI's clip page. |
 | `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, never a media URL. Backs the UI's link previews. Served from cached metadata. |
+| `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
+| `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
 | `GET /health` | Liveness. |
 
 ### Cache key schema
@@ -339,6 +342,7 @@ Base path `/api/v1`.
 | `xuid:{gamertag_lower}` | XUID string | 30 days | The mapping is immutable, and Profile/Social is the strictest-limited upstream service. Cache it hard. |
 | `profile:{xuid}` | `XboxUserProfile` | 2 hours | Gamerscore and presence drift, but nothing here is urgent. |
 | `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh until the earliest `expiration` in the list minus 5 minutes (about 55 min). Kept in KV for 6 hours. | Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
+| `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
 | `clip:{xuid}:{clipId}` | Clip metadata **without** media URL | Valid until `datePublished` + 90 days. Kept in KV 30 days beyond that. | Title, game, caption, duration, thumbnail and dates never change, so share previews need no upstream call. The extra 30 days let an expired link answer `410` rather than `404`. |
 
 The `clips:` freshness window is derived from the payload, not
@@ -376,6 +380,25 @@ Every clip response carries `availableUntil` (`datePublished` + 90
 days), so the UI can say how long a clip will stay up. Xbox does not
 publish the exact deletion time, so this is an estimate and is labelled
 as one in the UI.
+
+### Most-played games
+
+`GET /v2/marketplace/most-played` returns a ranked first page of 25 store
+products, out of roughly 18,000. The transformer keeps channel order and
+merges products with identical titles, keeping the best rank, because
+editions and platform versions are listed separately (one response listed
+Grand Theft Auto VI three times). The Xbox title ID cannot do the merging:
+most products lack one, and unrelated games that share a launcher share
+one. Ranks are renumbered after merging. The description is the store's
+short description, or the opening of the full one when the short one is
+only a tagline. Image URLs are passed through unchanged; they resize by
+query string (`?w=640`) and the originals reach 3840 px, so clients always
+ask for a size. Prices are omitted (they arrive in one currency whatever
+the visitor's country), as are Game Pass details (passes are listed only
+by internal IDs).
+
+There is no endpoint for clips by game across players, so the UI's game
+page shows store information, not clips.
 
 ### Link previews
 
@@ -417,6 +440,7 @@ One response shape for every failure:
 | Gamertag resolves to nothing | 404 | `PLAYER_NOT_FOUND` |
 | Clip not in the player's list | 404 | `CLIP_NOT_FOUND` |
 | Clip past its 90-day deletion | 410 | `CLIP_EXPIRED` |
+| Game not in the most-played list | 404 | `GAME_NOT_FOUND` |
 | Player's DVR privacy hides their clips | 200 | *not an error* — see below |
 | Inbound per-IP limit exceeded | 429 | `RATE_LIMITED`, with `Retry-After` |
 | Upstream 429 | 429 | `UPSTREAM_RATE_LIMIT`, with `Retry-After` passed through |

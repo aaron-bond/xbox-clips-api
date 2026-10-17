@@ -7,6 +7,7 @@ export type ErrorCode =
   | 'PLAYER_NOT_FOUND'
   | 'CLIP_NOT_FOUND'
   | 'CLIP_EXPIRED'
+  | 'GAME_NOT_FOUND'
   | 'RATE_LIMITED'
   | 'UPSTREAM_RATE_LIMIT'
   | 'UPSTREAM_ERROR'
@@ -18,6 +19,7 @@ const DEFINITIONS: Record<ErrorCode, { status: ContentfulStatusCode; message: st
   PLAYER_NOT_FOUND: { status: 404, message: 'No player with that gamertag or XUID was found.' },
   CLIP_NOT_FOUND: { status: 404, message: 'That clip was not found for this player.' },
   CLIP_EXPIRED: { status: 410, message: 'This clip has expired on Xbox and is no longer available.' },
+  GAME_NOT_FOUND: { status: 404, message: "That game isn't in the current most-played list." },
   RATE_LIMITED: { status: 429, message: 'Too many requests. Please slow down.' },
   UPSTREAM_RATE_LIMIT: { status: 429, message: 'Xbox data is temporarily rate-limited. Please try again shortly.' },
   UPSTREAM_ERROR: { status: 502, message: 'Xbox data is temporarily unavailable.' },

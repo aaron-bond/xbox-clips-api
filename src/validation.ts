@@ -8,6 +8,8 @@ const XUID = /^\d{1,20}$/;
 // followed by a modern-gamertag suffix such as "#1234".
 const GAMERTAG = /^[\p{L}\p{N}](?:[\p{L}\p{N} ]{0,13}[\p{L}\p{N}])?(?:#\d{1,5})?$/u;
 const CLIP_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Microsoft Store product IDs: 12 uppercase letters and digits, e.g. 9N4PT8HGCDHQ.
+const PRODUCT_ID = /^[0-9A-Z]{12}$/;
 
 /**
  * Identifiers are interpolated into cache keys and upstream URLs, so they are
@@ -27,6 +29,12 @@ export function parseXuid(raw: string): string {
 export function parseClipId(raw: string): string {
   if (!CLIP_ID.test(raw)) throw new AppError('INVALID_IDENTIFIER');
   return raw.toLowerCase();
+}
+
+export function parseProductId(raw: string): string {
+  const id = raw.toUpperCase();
+  if (!PRODUCT_ID.test(id)) throw new AppError('INVALID_IDENTIFIER');
+  return id;
 }
 
 export const DEFAULT_CLIP_LIMIT = 20;

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '../src/errors';
 import { OpenXblProvider } from '../src/provider/openxbl';
 import { accountResponse, clipsResponse, searchResponse, XUID } from './fixtures/openxbl';
+import { mostPlayedResponse } from './fixtures/most-played';
 
 function fakeFetch(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -39,6 +40,13 @@ describe('OpenXblProvider', () => {
   it('maps profiles and clips', async () => {
     expect((await new OpenXblProvider(fakeFetch(200, accountResponse)).getProfile('k', XUID))?.gamertag).toBe('TestPlayer');
     expect((await new OpenXblProvider(fakeFetch(200, clipsResponse)).getClips('k', XUID)).clips).toHaveLength(1);
+  });
+
+  it('fetches and maps most-played games', async () => {
+    const fetch = fakeFetch(200, mostPlayedResponse);
+    const games = await new OpenXblProvider(fetch).getMostPlayedGames('k');
+    expect(fetch.mock.calls[0]![0]).toBe('https://api.xbl.io/v2/marketplace/most-played');
+    expect(games).toHaveLength(4);
   });
 
   it('passes the continuation token through', async () => {

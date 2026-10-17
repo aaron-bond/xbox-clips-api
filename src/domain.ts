@@ -53,6 +53,30 @@ export interface ClipPage {
   access: ClipsAccess;
 }
 
+/**
+ * A game from the Xbox Store's most-played ranking. Image URLs are Microsoft
+ * Store image URLs, which resize by query string (`?w=640`); the originals are
+ * very large, so clients always request a size.
+ */
+export interface Game {
+  productId: string;
+  /** 1-based, after duplicate titles are merged. */
+  rank: number;
+  title: string;
+  genres: string[];
+  developer: string | null;
+  publisher: string | null;
+  releaseDate: string | null;
+  /** 0-5 average and its number of ratings. Few ratings make the average unreliable. */
+  rating: number | null;
+  ratingCount: number;
+  /** Store platform codes, e.g. XboxSeriesX, XboxOne, PC, XCloud, Handheld. */
+  platforms: string[];
+  description: string;
+  heroImageUrl: string | null;
+  boxArtUrl: string | null;
+}
+
 /** Strips the fields that change, leaving what is safe to cache until deletion. */
 export function toMetadata(clip: GameClipInfo): ClipMetadata {
   const { views: _views, media: _media, ...metadata } = clip;

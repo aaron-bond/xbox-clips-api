@@ -6,6 +6,7 @@ import type { AppEnv } from '../src/env';
 import { AppError } from '../src/errors';
 import { keys } from '../src/service';
 import { FakeProvider, makeClip } from './fake-provider';
+import type { Game } from '../src/domain';
 
 const NOW = Date.parse('2026-10-16T12:00:00.000Z');
 const XUID = '2533274900000001';
@@ -284,5 +285,54 @@ describe('preview', () => {
     const res = await setup().get(`/share/${XUID}/${CLIP_A}`);
     expect(res.status).toBe(404);
     expect(await errorCode(res)).toBe('NOT_FOUND');
+  });
+});
+
+describe('games', () => {
+  const game = (rank: number, productId: string): Game => ({
+    productId, rank, title: `Game ${rank}`, genres: ['Shooter'], developer: 'Dev', publisher: 'Pub',
+    releaseDate: '2026-10-06T15:00:00Z', rating: 4.5, ratingCount: 100, platforms: ['XboxSeriesX'],
+    description: 'A game.', heroImageUrl: 'https://img.test/hero', boxArtUrl: 'https://img.test/box',
+  });
+
+  it('serves most-played from one cached upstream call', async () => {
+    const { get, provider } = setup();
+    provider.mostPlayed = [game(1, '9N4PT8HGCDHQ'), game(2, 'BT5P2X999VH2')];
+    const first = (await (await get('/api/v1/games/most-played')).json()) as { games: Game[] };
+    expect(first.games.map((g) => g.productId)).toEqual(['9N4PT8HGCDHQ', 'BT5P2X999VH2']);
+    await get('/api/v1/games/most-played');
+    expect(provider.calls.getMostPlayedGames).toBe(1);
+  });
+
+  it('serves one game from the cached list without another upstream call', async () => {
+    const { get, provider } = setup();
+    provider.mostPlayed = [game(1, '9N4PT8HGCDHQ'), game(2, 'BT5P2X999VH2')];
+    await get('/api/v1/games/most-played');
+    const res = await get('/api/v1/games/bt5p2x999vh2');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Game).rank).toBe(2);
+    expect(provider.calls.getMostPlayedGames).toBe(1);
+  });
+
+  it('answers 404 for a game not in the list and 400 for a malformed id', async () => {
+    const { get, provider } = setup();
+    provider.mostPlayed = [game(1, '9N4PT8HGCDHQ')];
+    const missing = await get('/api/v1/games/9NBLGGH512WG');
+    expect(missing.status).toBe(404);
+    expect(await errorCode(missing)).toBe('GAME_NOT_FOUND');
+    const bad = await get('/api/v1/games/not-a-product');
+    expect(bad.status).toBe(400);
+    expect(await errorCode(bad)).toBe('INVALID_IDENTIFIER');
+  });
+
+  it('serves a stale list when upstream is rate-limited', async () => {
+    const { get, provider, advance } = setup();
+    provider.mostPlayed = [game(1, '9N4PT8HGCDHQ')];
+    await get('/api/v1/games/most-played');
+    advance(7 * 60 * 60 * 1000); // past the 6-hour freshness window
+    provider.failWith = new AppError('UPSTREAM_RATE_LIMIT', '30');
+    const res = await get('/api/v1/games/most-played');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { games: Game[] }).games).toHaveLength(1);
   });
 });

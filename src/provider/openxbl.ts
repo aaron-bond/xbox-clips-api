@@ -1,11 +1,13 @@
-import type { ClipPage, XboxUserProfile } from '../domain';
+import type { ClipPage, Game, XboxUserProfile } from '../domain';
 import { AppError } from '../errors';
 import {
   pickSearchMatch,
   toClipPage,
+  toMostPlayed,
   toProfile,
   type RawAccount,
   type RawClipList,
+  type RawMostPlayed,
   type RawSearch,
 } from './openxbl-transform';
 import type { IXboxDataProvider } from './types';
@@ -48,6 +50,12 @@ export class OpenXblProvider implements IXboxDataProvider {
     }
     this.expectOk(res, 'gameclips');
     return toClipPage(res.content as RawClipList);
+  }
+
+  async getMostPlayedGames(apiKey: string): Promise<Game[]> {
+    const res = await this.get(apiKey, '/marketplace/most-played');
+    this.expectOk(res, 'marketplace/most-played');
+    return toMostPlayed(res.content as RawMostPlayed);
   }
 
   private async get(apiKey: string, path: string): Promise<UpstreamResult> {

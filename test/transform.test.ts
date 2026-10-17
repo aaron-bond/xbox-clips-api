@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { pickSearchMatch, toClip, toClipPage, toProfile } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed } from '../src/provider/openxbl-transform';
+import { mostPlayedResponse } from './fixtures/most-played';
 import { accountResponse, CLIP_ID, clipsResponse, EXPIRATION, rawClip, searchResponse, XUID } from './fixtures/openxbl';
 
 describe('pickSearchMatch', () => {
@@ -87,5 +88,54 @@ describe('toClipPage', () => {
 
   it('carries a continuation token', () => {
     expect(toClipPage({ gameClips: [], pagingInfo: { continuationToken: 'abc' } }).continuationToken).toBe('abc');
+  });
+});
+
+describe('toMostPlayed (real payload, trimmed)', () => {
+  const games = toMostPlayed(mostPlayedResponse.content as unknown as RawMostPlayed);
+
+  it('keeps channel order and merges identical titles, re-ranking without gaps', () => {
+    expect(games.map((g) => [g.rank, g.title])).toEqual([
+      [1, 'Gears of War: E-Day'],
+      [2, 'Fortnite'],
+      [3, 'Grand Theft Auto VI: Ultimate Edition'],
+      [4, 'Grand Theft Auto VI'],
+    ]);
+  });
+
+  it('maps the fields the UI needs', () => {
+    expect(games[0]).toMatchObject({
+      productId: '9N4PT8HGCDHQ',
+      genres: ['Shooter', 'Action & adventure'],
+      developer: 'The Coalition',
+      publisher: 'Xbox Game Studios',
+      rating: 4.3,
+      ratingCount: 58,
+      platforms: ['XboxSeriesX', 'PC', 'XCloud', 'Handheld'],
+    });
+    expect(games[0]!.heroImageUrl).toMatch(/^https:\/\/store-images\.s-microsoft\.com\//);
+    expect(games[0]!.boxArtUrl).toMatch(/^https:\/\/store-images\.s-microsoft\.com\//);
+  });
+
+  it('falls back to the full description when the short one is only a tagline', () => {
+    expect(games[0]!.description).toBe(mostPlayedResponse.content.productSummaries[0].shortDescription.trim());
+    expect(games[2]!.description.length).toBeGreaterThan(80);
+  });
+
+  it('copes with an empty or missing payload', () => {
+    expect(toMostPlayed({})).toEqual([]);
+  });
+});
+
+describe('pickDescription', () => {
+  it('uses a real short description as is', () => {
+    expect(pickDescription('x'.repeat(100), 'full')).toBe('x'.repeat(100));
+  });
+
+  it('cuts a long full description at a sentence end', () => {
+    const full = 'First sentence here. '.repeat(40);
+    const out = pickDescription('Tagline', full);
+    expect(out.endsWith('.')).toBe(true);
+    expect(out.length).toBeLessThanOrEqual(600);
   });
 });

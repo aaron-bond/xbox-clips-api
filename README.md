@@ -20,6 +20,8 @@ frontend is [xbox-clips-ui](https://github.com/aaron-bond/xbox-clips-ui).
 | `GET /api/v1/players/:identifier/clips?limit=` | `{ xuid, access, total, clips }`. `access` is `public` or `restricted`. |
 | `GET /api/v1/clips/:xuid/:clipId` | One clip with a playable media URL. |
 | `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, no media URL. Backs the UI's link previews. |
+| `GET /api/v1/games/most-played` | `{ games }`: the Xbox Store's most-played games, ranked. Cached 6 hours. |
+| `GET /api/v1/games/:productId` | One game from that list. |
 | `GET /health` | `{ status: "ok" }` |
 
 Every error has the shape

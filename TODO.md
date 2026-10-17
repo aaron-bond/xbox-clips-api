@@ -29,6 +29,14 @@ any trade-off made.
 
 ## Done
 
+- [x] **Most-played games** (2026-10-17). `GET /api/v1/games/most-played`
+      and `GET /api/v1/games/:productId`, from one cached upstream call
+      (fresh 6 hours, kept 7 days). Transformer written against a real
+      payload; identical titles merged, ranks renumbered.
+      Trade-off: a game page only works while the game is in the current
+      list, since the single-game route reads that list rather than
+      spending a call on the store's 45 KB-per-product details endpoint.
+
 - [x] **Client IP over the UI's service binding** (2026-10-17). Verified
       live: preview requests from the UI's Pages Function arrive with the
       visitor's IP as `CF-Connecting-IP`, so the per-IP limit needed no

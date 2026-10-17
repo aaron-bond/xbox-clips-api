@@ -1,4 +1,4 @@
-import type { ClipPage, GameClipInfo, XboxUserProfile } from '../domain';
+import type { ClipPage, Game, GameClipInfo, XboxUserProfile } from '../domain';
 
 /**
  * Raw OpenXBL payload shapes, as observed in live responses on 2026-10-16
@@ -117,4 +117,82 @@ export function toClipPage(raw: RawClipList): ClipPage {
     continuationToken: raw.pagingInfo?.continuationToken || null,
     access: 'public',
   };
+}
+
+export interface RawStoreImage {
+  url?: string;
+}
+export interface RawProductSummary {
+  productId?: string;
+  title?: string;
+  categories?: string[];
+  developerName?: string;
+  publisherName?: string;
+  releaseDate?: string;
+  averageRating?: number;
+  ratingCount?: number;
+  availableOn?: string[];
+  shortDescription?: string;
+  description?: string;
+  images?: { superHeroArt?: RawStoreImage; boxArt?: RawStoreImage; poster?: RawStoreImage };
+}
+export interface RawMostPlayed {
+  channels?: Record<string, { products?: { productId?: string }[] }>;
+  productSummaries?: RawProductSummary[];
+}
+
+/** Below this length a short description is a tagline, not a description. */
+const MIN_SHORT_DESCRIPTION = 80;
+const MAX_DESCRIPTION = 600;
+
+/**
+ * The store's short description when it says something, else the opening of
+ * the full description, cut at a sentence end.
+ */
+export function pickDescription(short: string | undefined, full: string | undefined): string {
+  const s = (short ?? '').trim();
+  if (s.length >= MIN_SHORT_DESCRIPTION || !full) return s;
+  const f = full.trim();
+  if (f.length <= MAX_DESCRIPTION) return f;
+  const cut = f.slice(0, MAX_DESCRIPTION);
+  const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('.\n'));
+  return (end > MAX_DESCRIPTION / 2 ? cut.slice(0, end + 1) : cut.trimEnd() + '…').trim();
+}
+
+/**
+ * The ranking, in channel order. Editions and platform versions are separate
+ * store products; identical titles are merged, keeping the best rank. The Xbox
+ * title ID cannot do this: most products lack one, and unrelated games that
+ * share a launcher share one (PLAN-v1.md §2).
+ */
+export function toMostPlayed(raw: RawMostPlayed): Game[] {
+  const channel = Object.values(raw.channels ?? {})[0];
+  const byId = new Map((raw.productSummaries ?? []).map((p) => [p.productId, p]));
+  const order = channel?.products?.map((p) => p.productId) ?? (raw.productSummaries ?? []).map((p) => p.productId);
+
+  const seen = new Set<string>();
+  const games: Game[] = [];
+  for (const id of order) {
+    const p = id ? byId.get(id) : undefined;
+    if (!p?.productId || !p.title) continue;
+    const key = p.title.trim().toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    games.push({
+      productId: p.productId,
+      rank: games.length + 1,
+      title: p.title.trim(),
+      genres: p.categories ?? [],
+      developer: p.developerName || null,
+      publisher: p.publisherName || null,
+      releaseDate: p.releaseDate || null,
+      rating: typeof p.averageRating === 'number' && (p.ratingCount ?? 0) > 0 ? p.averageRating : null,
+      ratingCount: p.ratingCount ?? 0,
+      platforms: p.availableOn ?? [],
+      description: pickDescription(p.shortDescription, p.description),
+      heroImageUrl: p.images?.superHeroArt?.url ?? null,
+      boxArtUrl: p.images?.boxArt?.url ?? p.images?.poster?.url ?? null,
+    });
+  }
+  return games;
 }
