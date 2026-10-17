@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed, type RawTitleHistory } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, firstTitles, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed, type RawTitle } from '../src/provider/openxbl-transform';
 import { titlesResponse } from './fixtures/titles';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { accountResponse, CLIP_ID, clipsResponse, EXPIRATION, rawClip, searchResponse, XUID } from './fixtures/openxbl';
@@ -154,8 +154,29 @@ describe('pickDescription', () => {
   });
 });
 
+describe('firstTitles', () => {
+  const envelope = (titles: unknown[]) => JSON.stringify({ content: { xuid: '1', titles, achievementSummary: { a: 1 } }, code: 200 });
+
+  it('parses only the first N entries and says whether more follow', () => {
+    const raw = envelope([{ name: 'A' }, { name: 'B' }, { name: 'C' }]);
+    expect(firstTitles(raw, 2)).toEqual({ titles: [{ name: 'A' }, { name: 'B' }], more: true });
+    expect(firstTitles(raw, 3)).toEqual({ titles: [{ name: 'A' }, { name: 'B' }, { name: 'C' }], more: false });
+    expect(firstTitles(raw, 10).titles).toHaveLength(3);
+  });
+
+  it('is not fooled by braces, brackets or escaped quotes inside strings', () => {
+    const tricky = [{ name: 'Brace } here {', d: { n: [1, { x: ']' }] } }, { name: 'Quote \\" and \\\\ end' }, { name: 'Z' }];
+    expect(firstTitles(envelope(tricky), 2).titles).toEqual(tricky.slice(0, 2));
+  });
+
+  it('copes with an empty or missing titles array', () => {
+    expect(firstTitles(envelope([]), 100)).toEqual({ titles: [], more: false });
+    expect(firstTitles('{"content":{},"code":200}', 100)).toEqual({ titles: [], more: false });
+  });
+});
+
 describe('toCareerStats (real payload, trimmed)', () => {
-  const stats = toCareerStats(titlesResponse.content as unknown as RawTitleHistory);
+  const stats = toCareerStats(titlesResponse.content.titles as unknown as RawTitle[], false);
 
   it('picks the most recently played game', () => {
     expect(stats.nowPlaying).toMatchObject({ name: "Assassin's Creed Black Flag Resynced", gamerscore: 330, totalGamerscore: 1000, percent: 33 });
@@ -170,22 +191,12 @@ describe('toCareerStats (real payload, trimmed)', () => {
     expect(stats.onTheBrink).toMatchObject({ name: "Hellblade: Senua's Sacrifice", percent: 90 });
   });
 
-  it('counts games per platform, oldest generation first', () => {
-    expect(stats.platforms).toEqual([
-      { platform: 'Xbox 360', games: 3 },
-      { platform: 'Xbox One', games: 6 },
-      { platform: 'Xbox Series X|S', games: 8 },
-      { platform: 'PC', games: 1 },
-    ]);
-  });
-
-  it('flags a history cut off at 1,000 games', () => {
-    expect(stats.capped).toBe(false);
-    const many = { titles: Array.from({ length: 1000 }, (_, i) => ({ titleId: String(i), name: `G${i}`, type: 'Game' })) };
-    expect(toCareerStats(many).capped).toBe(true);
+  it('carries whether the facts cover only the most recent games', () => {
+    expect(stats).toMatchObject({ gamesCounted: 8, limited: false });
+    expect(toCareerStats([], true).limited).toBe(true);
   });
 
   it('copes with an empty history', () => {
-    expect(toCareerStats({})).toEqual({ nowPlaying: null, biggestHaul: null, onTheBrink: null, platforms: [], gamesCounted: 0, capped: false });
+    expect(toCareerStats([], false)).toEqual({ nowPlaying: null, biggestHaul: null, onTheBrink: null, gamesCounted: 0, limited: false });
   });
 });

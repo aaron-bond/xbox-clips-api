@@ -3,13 +3,14 @@ import { AppError } from '../errors';
 import {
   pickSearchMatch,
   toClipPage,
+  CAREER_GAMES,
+  firstTitles,
   toCareerStats,
   toMostPlayed,
   toProfile,
   type RawAccount,
   type RawClipList,
   type RawMostPlayed,
-  type RawTitleHistory,
   type RawSearch,
 } from './openxbl-transform';
 import type { IXboxDataProvider } from './types';
@@ -61,15 +62,49 @@ export class OpenXblProvider implements IXboxDataProvider {
   }
 
   /**
-   * Reads the player's title history (up to about 1 MB) and keeps only the
-   * derived facts. A hidden history (403/404) is not an error: the facts are
-   * simply unavailable.
+   * Career facts from the player's most recent games. The title history can be
+   * about 1 MB, so it is read as text and only its first CAREER_GAMES entries
+   * are parsed (PLAN-v1.md §5). A hidden history (403/404) is not an error:
+   * the facts are simply unavailable.
    */
   async getCareerStats(apiKey: string, xuid: string): Promise<CareerStats | null> {
-    const res = await this.get(apiKey, `/titles/${xuid}`);
+    const res = await this.getText(apiKey, `/titles/${xuid}`);
     if (res.status === 403 || res.status === 404) return null;
-    this.expectOk(res, 'titles');
-    return toCareerStats(res.content as RawTitleHistory);
+    if (res.status < 200 || res.status >= 300) {
+      console.error(`upstream titles returned ${res.status}`);
+      throw new AppError('UPSTREAM_ERROR');
+    }
+    const { titles, more } = firstTitles(res.text, CAREER_GAMES);
+    return toCareerStats(titles, more);
+  }
+
+  /**
+   * Like get(), but returns the body unparsed, for responses too large to
+   * parse whole. OpenXBL's envelope ends with its inner status code, which is
+   * read from the tail of the text.
+   */
+  private async getText(apiKey: string, path: string): Promise<{ status: number; text: string }> {
+    let res: Response;
+    try {
+      res = await this.fetchImpl(BASE_URL + path, {
+        headers: { 'X-Authorization': apiKey, Accept: 'application/json' },
+      });
+    } catch (err) {
+      console.error(`upstream unreachable: GET ${path}`, err);
+      throw new AppError('UPSTREAM_ERROR');
+    }
+    const text = await res.text();
+    const inner = /"code"\s*:\s*(\d{3})\s*\}\s*$/.exec(text);
+    const status = inner ? Number(inner[1]) : res.status;
+    if (status === 429) {
+      console.warn(`upstream rate limit: GET ${path}`);
+      throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
+    }
+    if (status >= 500) {
+      console.error(`upstream ${status}: GET ${path}: ${text.slice(0, 500)}`);
+      throw new AppError('UPSTREAM_ERROR');
+    }
+    return { status, text };
   }
 
   private async get(apiKey: string, path: string): Promise<UpstreamResult> {

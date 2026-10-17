@@ -340,7 +340,7 @@ describe('games', () => {
 describe('career', () => {
   const stats = {
     nowPlaying: { titleId: '1', name: 'Recent', imageUrl: null, gamerscore: 10, totalGamerscore: 100, percent: 10, lastPlayed: '2026-10-11T00:00:00Z' },
-    biggestHaul: null, onTheBrink: null, platforms: [{ platform: 'Xbox One', games: 3 }], gamesCounted: 3, capped: false,
+    biggestHaul: null, onTheBrink: null, gamesCounted: 3, limited: false,
   };
 
   it('serves career facts, cached for a day', async () => {

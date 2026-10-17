@@ -208,25 +208,64 @@ export interface RawTitle {
   titleId?: string;
   name?: string;
   type?: string;
-  devices?: string[];
   displayImage?: string;
   achievement?: { currentGamerscore?: number; totalGamerscore?: number; progressPercentage?: number };
   titleHistory?: { lastTimePlayed?: string };
 }
-export interface RawTitleHistory {
-  titles?: RawTitle[];
+
+/**
+ * How many of a player's most recent games the career facts read. Title
+ * history arrives newest first and can be about 1 MB; parsing all of it
+ * exceeded the Workers free plan's 10 ms CPU for heavy players, while the
+ * first 100 games parse in a fraction of that (PLAN-v1.md §5).
+ */
+export const CAREER_GAMES = 100;
+
+/**
+ * The first `limit` entries of the `titles` array in a raw title-history
+ * response, without parsing the rest. Scans for the end of each entry,
+ * tracking strings and escapes so braces inside names don't count, then
+ * parses only that slice. `more` is true when further entries follow.
+ */
+export function firstTitles(raw: string, limit: number): { titles: RawTitle[]; more: boolean } {
+  const key = raw.indexOf('"titles"');
+  const open = key < 0 ? -1 : raw.indexOf('[', key);
+  if (open < 0) return { titles: [], more: false };
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let count = 0;
+  let end = -1;
+  let i = open + 1;
+  for (; i < raw.length; i++) {
+    const c = raw.charCodeAt(i);
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === 92 /* \\ */) escaped = true;
+      else if (c === 34 /* " */) inString = false;
+      continue;
+    }
+    if (c === 34) inString = true;
+    else if (c === 123 /* { */) depth++;
+    else if (c === 125 /* } */) {
+      depth--;
+      if (depth === 0 && ++count === limit) {
+        end = i;
+        break;
+      }
+    } else if (c === 93 /* ] */ && depth === 0) {
+      end = i - 1;
+      break;
+    }
+  }
+  if (end < 0) return { titles: [], more: false };
+
+  const titles = JSON.parse(`[${raw.slice(open + 1, end + 1)}]`) as RawTitle[];
+  // Another entry follows if the next significant character is a comma.
+  const rest = raw.slice(end + 1, end + 64).trimStart();
+  return { titles, more: count === limit && rest.startsWith(',') };
 }
-
-/** Xbox returns at most this many titles; a full list means older ones are cut off. */
-export const TITLE_HISTORY_LIMIT = 1000;
-
-/** Store platform codes to names, oldest generation first. Other devices are not counted. */
-const PLATFORMS: [string, string[]][] = [
-  ['Xbox 360', ['Xbox360']],
-  ['Xbox One', ['XboxOne']],
-  ['Xbox Series X|S', ['XboxSeries']],
-  ['PC', ['PC', 'Win32']],
-];
 
 function toCareerGame(t: RawTitle): CareerGame {
   const a = t.achievement ?? {};
@@ -256,13 +295,12 @@ function best<T>(items: T[], score: (x: T) => number): T | null {
 }
 
 /**
- * The four history-based career facts (PLAN-v1.md §5). Games only; apps are
- * left out. "On the brink" ignores completed games and games with no
- * gamerscore earned, and breaks ties toward the bigger game.
+ * The career facts from a player's most recent games (PLAN-v1.md §5). Games
+ * only; apps are left out. "On the brink" ignores completed games and games
+ * with no gamerscore earned, and breaks ties toward the bigger game.
  */
-export function toCareerStats(raw: RawTitleHistory): CareerStats {
-  const all = raw.titles ?? [];
-  const games = all.filter((t) => t.name && (t.type ?? 'Game') === 'Game');
+export function toCareerStats(titles: RawTitle[], limited: boolean): CareerStats {
+  const games = titles.filter((t) => t.name && (t.type ?? 'Game') === 'Game');
   const time = (t: RawTitle) => Date.parse(t.titleHistory?.lastTimePlayed ?? '') || 0;
   const earned = (t: RawTitle) => t.achievement?.currentGamerscore ?? 0;
   const total = (t: RawTitle) => t.achievement?.totalGamerscore ?? 0;
@@ -274,17 +312,11 @@ export function toCareerStats(raw: RawTitleHistory): CareerStats {
     (t) => (t.achievement?.progressPercentage ?? 0) * 100_000 + total(t),
   );
 
-  const platforms = PLATFORMS.map(([platform, codes]) => ({
-    platform,
-    games: games.filter((t) => (t.devices ?? []).some((d) => codes.includes(d))).length,
-  })).filter((p) => p.games > 0);
-
   return {
     nowPlaying: recent ? toCareerGame(recent) : null,
     biggestHaul: haul ? toCareerGame(haul) : null,
     onTheBrink: brink ? toCareerGame(brink) : null,
-    platforms,
     gamesCounted: games.length,
-    capped: all.length >= TITLE_HISTORY_LIMIT,
+    limited,
   };
 }

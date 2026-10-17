@@ -103,22 +103,20 @@ export interface CareerGame {
 }
 
 /**
- * Facts derived from a player's title history (PLAN-v1.md §5). Only these are
- * cached; the raw history (up to about 1 MB) is read once and discarded.
+ * Facts derived from a player's most recent games (PLAN-v1.md §5). Only these
+ * are cached; the raw history (up to about 1 MB) is read once and discarded.
  */
 export interface CareerStats {
   /** The most recently played game. */
   nowPlaying: CareerGame | null;
-  /** The game with the most gamerscore earned. */
+  /** The game with the most gamerscore earned, among the recent games. */
   biggestHaul: CareerGame | null;
-  /** The game nearest to 100% without being complete. */
+  /** The recent game nearest to 100% without being complete. */
   onTheBrink: CareerGame | null;
-  /** Games played per platform, oldest generation first. */
-  platforms: { platform: string; games: number }[];
-  /** Games the facts were computed from. */
+  /** Games the facts were computed from: at most CAREER_GAMES. */
   gamesCounted: number;
-  /** True when the history hit Xbox's 1,000-game limit, so older games are missing. */
-  capped: boolean;
+  /** True when the player has more games than were read, so the facts cover only the most recent. */
+  limited: boolean;
 }
 
 /** Strips the fields that change, leaving what is safe to cache until deletion. */

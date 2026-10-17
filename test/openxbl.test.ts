@@ -57,6 +57,23 @@ describe('OpenXblProvider', () => {
     expect(stats?.biggestHaul?.name).toBe('Titanfall');
   });
 
+  it('reads only the most recent 100 games of a long history', async () => {
+    const titles = Array.from({ length: 150 }, (_, i) => ({
+      titleId: String(i), name: `Game ${i}`, type: 'Game',
+      achievement: { currentGamerscore: i === 120 ? 5000 : 10, totalGamerscore: 6000, progressPercentage: 1 },
+      titleHistory: { lastTimePlayed: new Date(Date.UTC(2026, 0, 1) - i * 86_400_000).toISOString() },
+    }));
+    const stats = await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getCareerStats('k', XUID);
+    expect(stats).toMatchObject({ gamesCounted: 100, limited: true });
+    // Game 120 has the biggest haul overall, but is older than the 100 read.
+    expect(stats?.biggestHaul?.name).not.toBe('Game 120');
+  });
+
+  it('honours a rate limit carried in the envelope of a title history', async () => {
+    const provider = new OpenXblProvider(fakeFetch(200, { content: {}, code: 429 }));
+    await expect(provider.getCareerStats('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_RATE_LIMIT' });
+  });
+
   it.each([403, 404])('treats a %i title history as unavailable', async (status) => {
     expect(await new OpenXblProvider(fakeFetch(status, '')).getCareerStats('k', XUID)).toBeNull();
   });

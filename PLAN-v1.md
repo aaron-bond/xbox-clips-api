@@ -49,7 +49,7 @@ Base URL: **`https://api.xbl.io/v2`**.
 | `GET /v2/account/{xuid}` | Profile. Takes an XUID only. Returns `profileUsers[0]` with an `id` and a `settings` array of `{ id, value }` pairs (`Gamertag`, `Gamerscore`, `GameDisplayPicRaw`, `Bio`, `Location`, `TenureLevel`, `XboxOneRep`, …). |
 | `GET /v2/dvr/gameclips/{xuid}` | Clips for any player. Paginates via a `continuationToken` query parameter. |
 | `GET /v2/marketplace/most-played` | The Xbox Store's most-played games. The same for every caller. |
-| `GET /v2/titles/{xuid}` | A player's title history: up to 1,000 games with gamerscore progress, last played and platforms. About 1 MB for a heavy player. |
+| `GET /v2/titles/{xuid}` | A player's title history, newest first: up to 1,000 games with gamerscore progress, last played and platforms. About 1 MB for a heavy player; accepts no filters. |
 
 Two further endpoints exist and are not used in v1:
 `GET /v2/dvr/gameclips` (the key owner's own clips) and
@@ -352,7 +352,7 @@ Base path `/api/v1`.
 | `GET /api/v1/players/:identifier/clips?limit=` | That player's clips. |
 | `GET /api/v1/clips/:xuid/:clipId` | One clip, with a media URL valid for playback. Powers the UI's clip page. |
 | `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, never a media URL. Backs the UI's link previews. Served from cached metadata. |
-| `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: career facts from the title history (now playing, biggest haul, nearest to 100%, platforms). `stats` is null when the history is hidden. |
+| `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: facts from the player's last 100 games (now playing, biggest haul, nearest to 100%). `stats` is null when the history is hidden. |
 | `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
 | `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
 | `GET /health` | Liveness. |
@@ -364,7 +364,7 @@ Base path `/api/v1`.
 | `xuid:{gamertag_lower}` | XUID string | 30 days | The mapping is immutable, and Profile/Social is the strictest-limited upstream service. Cache it hard. |
 | `profile:v2:{xuid}` | `XboxUserProfile` | 2 hours | Gamerscore and presence drift, but nothing here is urgent. |
 | `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh until the earliest `expiration` in the list minus 5 minutes (about 55 min). Kept in KV for 6 hours. | Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
-| `career:{xuid}` | `{ stats }`, facts only | Fresh 24 hours, kept 7 days | The source is about 1 MB; only the derived facts (a few hundred bytes) are stored. A hidden history is cached as null too. |
+| `career:v2:{xuid}` | `{ stats }`, facts only | Fresh 24 hours, kept 7 days | The source can be about 1 MB; only the derived facts (a few hundred bytes) are stored. A hidden history is cached as null too. |
 | `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
 | `clip:{xuid}:{clipId}` | Clip metadata **without** media URL | Valid until `datePublished` + 90 days. Kept in KV 30 days beyond that. | Title, game, caption, duration, thumbnail and dates never change, so share previews need no upstream call. The extra 30 days let an expired link answer `410` rather than `404`. |
 
@@ -406,27 +406,38 @@ as one in the UI.
 
 ### Career facts
 
-`GET /v2/titles/{xuid}` returns up to 1,000 games, about 1 MB for a heavy
-player. The Worker reads it, derives four facts and stores only those:
+`GET /v2/titles/{xuid}` returns a player's title history, **newest first**:
+up to 1,000 games, about 1 MB for a heavy player. It accepts no filters:
+the spec lists none, an undocumented `maxItems` was tried and ignored, and
+the legacy `/v2/player/titleHistory/{xuid}` returns the same data.
+
+**Only the most recent 100 games are read.** The Worker takes the response
+as text, scans to the end of the 100th entry (tracking strings and escapes,
+so braces inside names don't count) and parses only that slice. The facts:
 
 - **Now playing:** the most recently played game.
-- **Biggest haul:** the game with the most gamerscore earned.
+- **Biggest haul:** the game with the most gamerscore earned, among those 100.
 - **On the brink:** the game nearest to 100% that is not complete and has
   some gamerscore earned; ties go to the bigger game.
-- **Platforms:** games played per platform (Xbox 360, Xbox One, Xbox Series
-  X|S, PC), oldest first. A game on several platforms counts on each.
 
-Apps are left out. When the history holds 1,000 titles it is flagged
-`capped`, since older games are then missing; the UI says "from their last
-1,000 games". A 403 or 404 means the history is hidden, and is returned and
-cached as null rather than as an error.
+Apps are left out. When the player has more than 100 games the result is
+flagged `limited`, and the UI says "from their last 100 games". A 403 or 404
+means the history is hidden, and is returned and cached as null rather than
+as an error.
 
-**CPU:** reading the 1 MB and deriving the facts took about 5 ms on a
-development machine, against the free plan's 10 ms per request. Waiting for
-the download does not count. It runs at most once per player per day, and
-the largest possible payload is bounded by the 1,000-game limit. Production
-CPU time is watched after release; if heavy players come close to the limit,
-the Workers Paid plan (30 s) removes the concern.
+**Why 100, measured in production on 2026-10-17:** parsing the whole history
+of a 1,000-game player took **13 ms** of CPU, over the free plan's 10 ms per
+request; a 731-game player took 9 ms. CPU grows with history size, and the
+heaviest players are the likeliest users. Reading the first 100 games parses
+about 10% of the payload (0.8 ms locally, against 4.5 ms for the whole). The
+download is unchanged, since upstream cannot be asked for less; waiting for it
+does not count as CPU, but for a heavy player it can take over 20 seconds on
+the first request of the day.
+
+**What was given up:** a per-platform "generations" fact, which needs the
+whole history and cannot be derived from recent games; and career-best
+framing, so the biggest haul is the best of the last 100 games, not of all
+time.
 
 Other sources were sampled and rejected: per-achievement records (unordered,
 tens of thousands for a heavy player, no rarity) and player stats (no

@@ -25,7 +25,7 @@ export const POLICY = {
   },
   /** Metadata is kept past deletion so an expired share link can answer 410, not 404. */
   clipMetadata: { retainPastDeletion: 30 * DAY },
-  /** Career facts change slowly; the source is about 1 MB, so fetch it at most daily. */
+  /** Career facts change slowly; the source can be about 1 MB, so fetch it at most daily. */
   career: { fresh: 24 * HOUR, retain: 7 * DAY },
   /** The same for every visitor, so one upstream call per window serves all traffic. */
   mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
@@ -41,7 +41,8 @@ export const keys = {
   clips: (xuid: string) => `clips:${xuid}`,
   clip: (xuid: string, clipId: string) => `clip:${xuid}:${clipId}`,
   mostPlayed: () => 'games:most-played',
-  career: (xuid: string) => `career:${xuid}`,
+  // v2: facts from the most recent 100 games, without platforms.
+  career: (xuid: string) => `career:v2:${xuid}`,
 };
 
 export interface PlayerClips {

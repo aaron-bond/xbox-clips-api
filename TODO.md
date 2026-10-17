@@ -5,9 +5,9 @@ any trade-off made.
 
 ## Open questions
 
-- [ ] **Career CPU time in production.** Check the Worker's CPU time on
-      `/career` for heavy players after release (about 5 ms locally, against a
-      10 ms free-plan limit). Move to Workers Paid if it runs close.
+- [ ] **Career CPU time, after the 100-game change.** Confirm in production
+      that `/career` for a 1,000-game player is now well under 10 ms (it was
+      13 ms parsing the whole history).
 - [ ] **O3: restricted privacy. Deferred until a user reports a problem.** Call the clips endpoint for a player with
       restricted capture privacy and record what comes back. The provider
       currently treats `403` and `404` as `restricted`, and an empty `200` as
@@ -31,6 +31,12 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **Career facts read only the last 100 games** (2026-10-17). Parsing a
+      whole 1,000-game history took 13 ms of CPU in production, over the free
+      plan's 10 ms. The Worker now scans the raw text and parses only the
+      first 100 entries. The generations fact is dropped (it needs the whole
+      history); the biggest haul is the best of the last 100 games.
 
 - [x] **Career facts** (2026-10-17). `GET /api/v1/players/:identifier/career`
       reads the title history once a day per player and caches four derived
