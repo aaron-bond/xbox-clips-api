@@ -222,49 +222,106 @@ export interface RawTitle {
 export const CAREER_GAMES = 100;
 
 /**
- * The first `limit` entries of the `titles` array in a raw title-history
- * response, without parsing the rest. Scans for the end of each entry,
- * tracking strings and escapes so braces inside names don't count, then
- * parses only that slice. `more` is true when further entries follow.
+ * Reads the start of a title-history response as it arrives, and stops at the
+ * end of its `limit`-th title. The history is newest first and can be about
+ * 1 MB, so stopping early saves both CPU (only the first part is ever decoded
+ * and parsed) and waiting time (PLAN-v1.md §5).
+ *
+ * Feed it text with push(); once `done` is true, stop reading. If the body ends
+ * first, call end(). It finds where each entry ends by counting braces,
+ * tracking strings and escapes so braces inside names don't count.
  */
-export function firstTitles(raw: string, limit: number): { titles: RawTitle[]; more: boolean } {
-  const key = raw.indexOf('"titles"');
-  const open = key < 0 ? -1 : raw.indexOf('[', key);
-  if (open < 0) return { titles: [], more: false };
+export class TitlesScanner {
+  /** Everything received so far: kept so the finished slice can be parsed. */
+  text = '';
+  private open = -1;
+  private pos = 0;
+  private depth = 0;
+  private inString = false;
+  private escaped = false;
+  private count = 0;
+  private end = -1;
+  private hasMore: boolean | null = null;
 
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  let count = 0;
-  let end = -1;
-  let i = open + 1;
-  for (; i < raw.length; i++) {
-    const c = raw.charCodeAt(i);
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (c === 92 /* \\ */) escaped = true;
-      else if (c === 34 /* " */) inString = false;
-      continue;
-    }
-    if (c === 34) inString = true;
-    else if (c === 123 /* { */) depth++;
-    else if (c === 125 /* } */) {
-      depth--;
-      if (depth === 0 && ++count === limit) {
-        end = i;
-        break;
-      }
-    } else if (c === 93 /* ] */ && depth === 0) {
-      end = i - 1;
-      break;
-    }
+  constructor(private readonly limit: number) {}
+
+  /** True once enough has been read: stop reading the body. */
+  get done(): boolean {
+    return this.hasMore !== null;
   }
-  if (end < 0) return { titles: [], more: false };
 
-  const titles = JSON.parse(`[${raw.slice(open + 1, end + 1)}]`) as RawTitle[];
-  // Another entry follows if the next significant character is a comma.
-  const rest = raw.slice(end + 1, end + 64).trimStart();
-  return { titles, more: count === limit && rest.startsWith(',') };
+  push(chunk: string): void {
+    if (this.done) return;
+    this.text += chunk;
+    if (this.open < 0) {
+      const key = this.text.indexOf('"titles"');
+      const bracket = key < 0 ? -1 : this.text.indexOf('[', key);
+      if (bracket < 0) return;
+      this.open = bracket;
+      this.pos = bracket + 1;
+    }
+    this.scan();
+  }
+
+  /** The body has ended without `done`: settle on what was read. */
+  finish(): void {
+    if (this.end >= 0 && this.hasMore === null) this.hasMore = false;
+  }
+
+  /** The titles read, and whether the history has more after them. */
+  result(): { titles: RawTitle[]; more: boolean } {
+    if (this.open < 0 || this.end < 0) return { titles: [], more: false };
+    const titles = JSON.parse(`[${this.text.slice(this.open + 1, this.end + 1)}]`) as RawTitle[];
+    return { titles, more: this.hasMore === true };
+  }
+
+  private scan(): void {
+    const t = this.text;
+    let i = this.pos;
+    // After the last wanted entry, look for the next significant character.
+    if (this.end >= 0) {
+      while (i < t.length && /\s/.test(t[i]!)) i++;
+      if (i < t.length) this.hasMore = t[i] === ',';
+      this.pos = i;
+      return;
+    }
+    for (; i < t.length; i++) {
+      const c = t.charCodeAt(i);
+      if (this.inString) {
+        if (this.escaped) this.escaped = false;
+        else if (c === 92 /* \\ */) this.escaped = true;
+        else if (c === 34 /* " */) this.inString = false;
+        continue;
+      }
+      if (c === 34) this.inString = true;
+      else if (c === 123 /* { */) this.depth++;
+      else if (c === 125 /* } */) {
+        this.depth--;
+        if (this.depth === 0 && ++this.count === this.limit) {
+          this.end = i;
+          this.pos = i + 1;
+          this.scan();
+          return;
+        }
+      } else if (c === 93 /* ] */ && this.depth === 0) {
+        // The array closed before the limit: the whole history has been read.
+        // The slice runs to just before the bracket; whitespace there is harmless.
+        this.end = this.count > 0 ? i - 1 : -1;
+        this.hasMore = false;
+        this.pos = i + 1;
+        return;
+      }
+    }
+    this.pos = i;
+  }
+}
+
+/** The first `limit` titles of a complete raw title-history response. */
+export function firstTitles(raw: string, limit: number): { titles: RawTitle[]; more: boolean } {
+  const scanner = new TitlesScanner(limit);
+  scanner.push(raw);
+  if (!scanner.done) scanner.finish();
+  return scanner.result();
 }
 
 function toCareerGame(t: RawTitle): CareerGame {

@@ -4,7 +4,7 @@ import {
   pickSearchMatch,
   toClipPage,
   CAREER_GAMES,
-  firstTitles,
+  TitlesScanner,
   toCareerStats,
   toMostPlayed,
   toProfile,
@@ -63,27 +63,13 @@ export class OpenXblProvider implements IXboxDataProvider {
 
   /**
    * Career facts from the player's most recent games. The title history can be
-   * about 1 MB, so it is read as text and only its first CAREER_GAMES entries
-   * are parsed (PLAN-v1.md §5). A hidden history (403/404) is not an error:
-   * the facts are simply unavailable.
+   * about 1 MB and arrives newest first, so the body is read as it streams in
+   * and the download is cancelled once the first CAREER_GAMES titles have
+   * arrived (PLAN-v1.md §5). A hidden history (403/404) is not an error: the
+   * facts are simply unavailable.
    */
   async getCareerStats(apiKey: string, xuid: string): Promise<CareerStats | null> {
-    const res = await this.getText(apiKey, `/titles/${xuid}`);
-    if (res.status === 403 || res.status === 404) return null;
-    if (res.status < 200 || res.status >= 300) {
-      console.error(`upstream titles returned ${res.status}`);
-      throw new AppError('UPSTREAM_ERROR');
-    }
-    const { titles, more } = firstTitles(res.text, CAREER_GAMES);
-    return toCareerStats(titles, more);
-  }
-
-  /**
-   * Like get(), but returns the body unparsed, for responses too large to
-   * parse whole. OpenXBL's envelope ends with its inner status code, which is
-   * read from the tail of the text.
-   */
-  private async getText(apiKey: string, path: string): Promise<{ status: number; text: string }> {
+    const path = `/titles/${xuid}`;
     let res: Response;
     try {
       res = await this.fetchImpl(BASE_URL + path, {
@@ -93,18 +79,42 @@ export class OpenXblProvider implements IXboxDataProvider {
       console.error(`upstream unreachable: GET ${path}`, err);
       throw new AppError('UPSTREAM_ERROR');
     }
-    const text = await res.text();
-    const inner = /"code"\s*:\s*(\d{3})\s*\}\s*$/.exec(text);
-    const status = inner ? Number(inner[1]) : res.status;
-    if (status === 429) {
-      console.warn(`upstream rate limit: GET ${path}`);
-      throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
+
+    const scanner = new TitlesScanner(CAREER_GAMES);
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    if (reader) {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        scanner.push(decoder.decode(value, { stream: true }));
+        if (scanner.done) {
+          // Enough titles: stop the download rather than wait for the rest.
+          await reader.cancel().catch(() => {});
+          break;
+        }
+      }
     }
-    if (status >= 500) {
-      console.error(`upstream ${status}: GET ${path}: ${text.slice(0, 500)}`);
-      throw new AppError('UPSTREAM_ERROR');
+
+    if (!scanner.done) {
+      // The whole body arrived: it may be an error envelope rather than a history.
+      scanner.push(decoder.decode());
+      scanner.finish();
+      const inner = /"code"\s*:\s*(\d{3})\s*\}\s*$/.exec(scanner.text);
+      const status = inner ? Number(inner[1]) : res.status;
+      if (status === 403 || status === 404) return null;
+      if (status === 429) {
+        console.warn(`upstream rate limit: GET ${path}`);
+        throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
+      }
+      if (status < 200 || status >= 300) {
+        console.error(`upstream ${status}: GET ${path}: ${scanner.text.slice(0, 500)}`);
+        throw new AppError('UPSTREAM_ERROR');
+      }
     }
-    return { status, text };
+
+    const { titles, more } = scanner.result();
+    return toCareerStats(titles, more);
   }
 
   private async get(apiKey: string, path: string): Promise<UpstreamResult> {

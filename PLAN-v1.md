@@ -411,9 +411,13 @@ up to 1,000 games, about 1 MB for a heavy player. It accepts no filters:
 the spec lists none, an undocumented `maxItems` was tried and ignored, and
 the legacy `/v2/player/titleHistory/{xuid}` returns the same data.
 
-**Only the most recent 100 games are read.** The Worker takes the response
-as text, scans to the end of the 100th entry (tracking strings and escapes,
-so braces inside names don't count) and parses only that slice. The facts:
+**Only the most recent 100 games are read, and the download stops there.**
+The Worker reads the response as it streams in, scanning each piece for the
+end of each entry (tracking strings and escapes, so braces inside names
+don't count). At the end of the 100th entry it cancels the download and
+parses only that slice. If the body ends first, it was a short history or an
+error envelope; the whole text is then in hand, and OpenXBL's inner status
+code is read from its tail as for any other response. The facts:
 
 - **Now playing:** the most recently played game.
 - **Biggest haul:** the game with the most gamerscore earned, among those 100.
@@ -425,14 +429,17 @@ flagged `limited`, and the UI says "from their last 100 games". A 403 or 404
 means the history is hidden, and is returned and cached as null rather than
 as an error.
 
-**Why 100, measured in production on 2026-10-17:** parsing the whole history
-of a 1,000-game player took **13 ms** of CPU, over the free plan's 10 ms per
-request; a 731-game player took 9 ms. CPU grows with history size, and the
-heaviest players are the likeliest users. Reading the first 100 games parses
-about 10% of the payload (0.8 ms locally, against 4.5 ms for the whole). The
-download is unchanged, since upstream cannot be asked for less; waiting for it
-does not count as CPU, but for a heavy player it can take over 20 seconds on
-the first request of the day.
+**Why, measured in production on 2026-10-17:** parsing the whole history of
+a 1,000-game player took **13 ms** of CPU, over the free plan's 10 ms per
+request; a 731-game player took 9 ms. Parsing only the first 100 entries of
+a fully downloaded body brought the 731-game player to 6 ms but left the
+1,000-game player at 13 ms: for a heavy history, **decoding the whole 1 MB
+body into a string** was the main cost, not parsing it. Streaming fixes that,
+since only the first tenth of the body is ever decoded. Upstream cannot be
+asked for less (no filters), and appears to build the whole response before
+sending it, so stopping early shortens the wait only a little: a heavy
+player's first request of the day can still take several seconds. Waiting
+does not count as CPU.
 
 **What was given up:** a per-platform "generations" fact, which needs the
 whole history and cannot be derived from recent games; and career-best

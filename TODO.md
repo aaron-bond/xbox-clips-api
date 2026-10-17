@@ -5,9 +5,10 @@ any trade-off made.
 
 ## Open questions
 
-- [ ] **Career CPU time, after the 100-game change.** Confirm in production
-      that `/career` for a 1,000-game player is now well under 10 ms (it was
-      13 ms parsing the whole history).
+- [ ] **Career CPU time, after streaming.** Confirm in production that
+      `/career` for a 1,000-game player is now well under 10 ms. It was 13 ms
+      both parsing the whole history and parsing only 100 entries of a fully
+      decoded body.
 - [ ] **O3: restricted privacy. Deferred until a user reports a problem.** Call the clips endpoint for a player with
       restricted capture privacy and record what comes back. The provider
       currently treats `403` and `404` as `restricted`, and an empty `200` as
@@ -31,6 +32,11 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **Career history streamed, download cancelled at 100 games**
+      (2026-10-17). The 100-game parse alone didn't help heavy players: decoding
+      the whole 1 MB body was the cost. The scanner now works incrementally on
+      the stream and the Worker cancels the download once it has 100 games.
 
 - [x] **Career facts read only the last 100 games** (2026-10-17). Parsing a
       whole 1,000-game history took 13 ms of CPU in production, over the free

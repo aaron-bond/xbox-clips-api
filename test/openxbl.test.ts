@@ -69,6 +69,39 @@ describe('OpenXblProvider', () => {
     expect(stats?.biggestHaul?.name).not.toBe('Game 120');
   });
 
+  it('stops reading a title history once it has 100 games, even split across chunks', async () => {
+    const titles = Array.from({ length: 300 }, (_, i) => ({ titleId: String(i), name: `Game ${i} {"}`, type: 'Game', achievement: { currentGamerscore: 1, totalGamerscore: 2, progressPercentage: 50 } }));
+    const text = JSON.stringify({ content: { xuid: XUID, titles }, code: 200 });
+    let sent = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        // Odd-sized chunks, so entries and strings straddle chunk boundaries.
+        const piece = text.slice(sent, sent + 997);
+        sent += 997;
+        if (piece) controller.enqueue(new TextEncoder().encode(piece));
+        else controller.close();
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const stats = await new OpenXblProvider(vi.fn(async () => new Response(body))).getCareerStats('k', XUID);
+    expect(stats).toMatchObject({ gamesCounted: 100, limited: true });
+    expect(cancelled).toBe(true);
+    expect(sent).toBeLessThan(text.length / 2);
+  });
+
+  it('reads a short history to its end', async () => {
+    const titles = [{ titleId: '1', name: 'Only', type: 'Game', achievement: { currentGamerscore: 5, totalGamerscore: 10, progressPercentage: 50 } }];
+    const stats = await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getCareerStats('k', XUID);
+    expect(stats).toMatchObject({ gamesCounted: 1, limited: false });
+  });
+
+  it('treats an inner 404 in the envelope as a hidden history', async () => {
+    expect(await new OpenXblProvider(fakeFetch(200, { content: {}, code: 404 })).getCareerStats('k', XUID)).toBeNull();
+  });
+
   it('honours a rate limit carried in the envelope of a title history', async () => {
     const provider = new OpenXblProvider(fakeFetch(200, { content: {}, code: 429 }));
     await expect(provider.getCareerStats('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_RATE_LIMIT' });

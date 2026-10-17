@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, firstTitles, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed, type RawTitle } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed, type RawTitle } from '../src/provider/openxbl-transform';
 import { titlesResponse } from './fixtures/titles';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { accountResponse, CLIP_ID, clipsResponse, EXPIRATION, rawClip, searchResponse, XUID } from './fixtures/openxbl';
@@ -167,6 +167,17 @@ describe('firstTitles', () => {
   it('is not fooled by braces, brackets or escaped quotes inside strings', () => {
     const tricky = [{ name: 'Brace } here {', d: { n: [1, { x: ']' }] } }, { name: 'Quote \\" and \\\\ end' }, { name: 'Z' }];
     expect(firstTitles(envelope(tricky), 2).titles).toEqual(tricky.slice(0, 2));
+  });
+
+  it('gives the same result fed in pieces as whole', () => {
+    const titles = Array.from({ length: 30 }, (_, i) => ({ name: `G${i} "quoted" {braced}`, n: [i, { x: ']' }] }));
+    const raw = envelope(titles);
+    for (const size of [1, 7, 64]) {
+      const scanner = new TitlesScanner(20);
+      for (let i = 0; i < raw.length && !scanner.done; i += size) scanner.push(raw.slice(i, i + size));
+      if (!scanner.done) scanner.finish();
+      expect(scanner.result()).toEqual({ titles: titles.slice(0, 20), more: true });
+    }
   });
 
   it('copes with an empty or missing titles array', () => {
