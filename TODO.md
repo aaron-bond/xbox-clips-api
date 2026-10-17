@@ -5,7 +5,7 @@ any trade-off made.
 
 ## Open questions
 
-- [ ] **O3: restricted privacy.** Call the clips endpoint for a player with
+- [ ] **O3: restricted privacy. Deferred until a user reports a problem.** Call the clips endpoint for a player with
       restricted capture privacy and record what comes back. The provider
       currently treats `403` and `404` as `restricted`, and an empty `200` as
       public with no clips (`TODO(O3)` in `src/provider/openxbl.ts`).

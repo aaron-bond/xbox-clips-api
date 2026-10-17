@@ -578,14 +578,15 @@ working backlog; `CLAUDE.md` is the map of the code.
   least 3 minutes before its `expiration`, cause unknown. The UI's
   retry-on-playback-error covers it. If it proves common, widen the
   freshness margin in `POLICY.clips.expiryMargin`.
-- **Restricted-privacy response (O3).** Needs a test account with
-  restricted capture privacy.
+- **Restricted-privacy response (O3). Deferred** (2026-10-17): not
+  being tested proactively. The provider's best-guess mapping stays in
+  place (`TODO(O3)` in code), and this is revisited if a user reports a
+  player whose clips show wrongly.
 - **Thumbnail content type.** Thumbnails are served as
   `application/octet-stream`. Whether chat-app crawlers accept that as an
   `og:image` is untested; check once deployed.
 
 ### Next steps, in order
 
-1. Test a restricted-privacy account; record it in §7 and settle the §6
-   mapping.
+1. Revisit O3 only if a user reports a privacy-related problem.
 2. Start xbox-clips-ui against this API.
