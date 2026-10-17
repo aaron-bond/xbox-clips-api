@@ -3,11 +3,6 @@
 Live backlog. Finished items keep a short note on what was actually built and
 any trade-off made.
 
-## Deployment
-
-- [ ] Verify the client IP the preview endpoint sees over the UI's service
-      binding, and make the per-IP limit use the visitor's IP (PLAN §10).
-
 ## Open questions
 
 - [ ] **O3: restricted privacy.** Call the clips endpoint for a player with
@@ -33,6 +28,11 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **Client IP over the UI's service binding** (2026-10-17). Verified
+      live: preview requests from the UI's Pages Function arrive with the
+      visitor's IP as `CF-Connecting-IP`, so the per-IP limit needed no
+      change.
 
 - [x] **Link previews moved to the UI** (2026-10-16). Removed `/share` and
       its HTML rendering; added `GET /api/v1/clips/:xuid/:clipId/preview`

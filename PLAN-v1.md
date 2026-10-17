@@ -567,6 +567,10 @@ working backlog; `CLAUDE.md` is the map of the code.
   payload's `expiration` stamps (§5).
 - Share links resolve through `xuid` + `gameClipId`. Previews render from
   cached metadata. Clips past 90 days return `410 CLIP_EXPIRED` (§5, §6).
+- The per-IP limit works for the UI's preview function: over the service
+  binding, the API receives the visitor's own IP as `CF-Connecting-IP`
+  (verified 2026-10-17). Cloudflare sets that header on internet requests,
+  so clients cannot spoof it.
 
 ### Open
 
@@ -579,11 +583,6 @@ working backlog; `CLAUDE.md` is the map of the code.
 - **Thumbnail content type.** Thumbnails are served as
   `application/octet-stream`. Whether chat-app crawlers accept that as an
   `og:image` is untested; check once deployed.
-- **Client IP over a service binding.** The UI's preview function calls
-  the preview endpoint over a service binding, so the per-IP limit sees
-  the function, not the visitor. What `CF-Connecting-IP` the API receives
-  on such a request, and whether a forwarded value can be trusted, is
-  verified when the function is built.
 
 ### Next steps, in order
 
