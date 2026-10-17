@@ -92,6 +92,12 @@ describe('OpenXblProvider', () => {
     expect(sent).toBeLessThan(text.length / 2);
   });
 
+  it('asks for the title history uncompressed', async () => {
+    const fetch = fakeFetch(200, { content: { xuid: XUID, titles: [] }, code: 200 });
+    await new OpenXblProvider(fetch).getCareerStats('k', XUID);
+    expect(new Headers(fetch.mock.calls[0]![1]?.headers).get('Accept-Encoding')).toBe('identity');
+  });
+
   it('reads a short history to its end', async () => {
     const titles = [{ titleId: '1', name: 'Only', type: 'Game', achievement: { currentGamerscore: 5, totalGamerscore: 10, progressPercentage: 50 } }];
     const stats = await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getCareerStats('k', XUID);

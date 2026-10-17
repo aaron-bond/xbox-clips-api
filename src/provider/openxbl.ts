@@ -73,12 +73,18 @@ export class OpenXblProvider implements IXboxDataProvider {
     let res: Response;
     try {
       res = await this.fetchImpl(BASE_URL + path, {
-        headers: { 'X-Authorization': apiKey, Accept: 'application/json' },
+        // Experiment (PLAN-v1.md §5): upstream compresses this ~1 MB response with
+        // Brotli, and decompressing it appears to cost the CPU that stopping early
+        // was meant to save. Uncompressed, only the bytes before the cut-off are read.
+        headers: { 'X-Authorization': apiKey, Accept: 'application/json', 'Accept-Encoding': 'identity' },
       });
     } catch (err) {
       console.error(`upstream unreachable: GET ${path}`, err);
       throw new AppError('UPSTREAM_ERROR');
     }
+
+    // Temporary diagnostic for the encoding experiment: shows whether the runtime honoured the header.
+    console.log(`titles response: encoding=${res.headers.get('content-encoding') ?? 'none'} length=${res.headers.get('content-length') ?? 'unknown'}`);
 
     const scanner = new TitlesScanner(CAREER_GAMES);
     const reader = res.body?.getReader();
