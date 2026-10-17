@@ -29,6 +29,12 @@ any trade-off made.
 
 ## Done
 
+- [x] **Richer profiles** (2026-10-17). Profiles now include bio, location,
+      tenure (years on Xbox) and reputation, from the same upstream call.
+      Cache key bumped to `profile:v2:` so profiles cached in the old shape
+      are not served without the new fields. `TenureLevel` is undocumented;
+      read as years (PLAN §2).
+
 - [x] **Most-played games** (2026-10-17). `GET /api/v1/games/most-played`
       and `GET /api/v1/games/:productId`, from one cached upstream call
       (fresh 6 hours, kept 7 days). Transformer written against a real

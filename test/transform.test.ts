@@ -23,7 +23,20 @@ describe('toProfile', () => {
       gamertag: 'TestPlayer',
       gamerscore: 12345,
       gamerpicUrl: 'https://images-eds-ssl.xboxlive.com/image?url=example&format=png',
+      bio: 'Clips from the couch.',
+      location: null,
+      tenureYears: 19,
+      reputation: 'good',
     });
+  });
+
+  it('maps every reputation tier and tolerates missing extras', () => {
+    const user = (settings: { id: string; value: string }[]) => ({ profileUsers: [{ id: '1', settings: [{ id: 'Gamertag', value: 'A' }, ...settings] }] });
+    expect(toProfile(user([{ id: 'XboxOneRep', value: 'NeedsWork' }]))?.reputation).toBe('needs-work');
+    expect(toProfile(user([{ id: 'XboxOneRep', value: 'AvoidMe' }]))?.reputation).toBe('avoid');
+    expect(toProfile(user([{ id: 'XboxOneRep', value: 'Unknown' }]))?.reputation).toBeNull();
+    expect(toProfile(user([]))).toMatchObject({ bio: null, location: null, tenureYears: null, reputation: null });
+    expect(toProfile(user([{ id: 'TenureLevel', value: 'x' }]))?.tenureYears).toBeNull();
   });
 
   it('returns null when there is no user', () => {

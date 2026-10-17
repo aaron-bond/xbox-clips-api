@@ -1,4 +1,4 @@
-import type { ClipPage, Game, GameClipInfo, XboxUserProfile } from '../domain';
+import type { ClipPage, Game, GameClipInfo, Reputation, XboxUserProfile } from '../domain';
 
 /**
  * Raw OpenXBL payload shapes, as observed in live responses on 2026-10-16
@@ -65,6 +65,8 @@ export function pickSearchMatch(raw: RawSearch, gamertag: string): string | null
   return match?.xuid ?? null;
 }
 
+const REPUTATIONS: Record<string, Reputation> = { GoodPlayer: 'good', NeedsWork: 'needs-work', AvoidMe: 'avoid' };
+
 export function toProfile(raw: RawAccount): XboxUserProfile | null {
   const user = raw.profileUsers?.[0];
   if (!user?.id) return null;
@@ -72,11 +74,16 @@ export function toProfile(raw: RawAccount): XboxUserProfile | null {
   const gamertag = settings.get('Gamertag') ?? settings.get('ModernGamertag');
   if (!gamertag) return null;
   const gamerscore = Number(settings.get('Gamerscore'));
+  const tenure = Number(settings.get('TenureLevel'));
   return {
     xuid: user.id,
     gamertag,
     gamerscore: Number.isFinite(gamerscore) ? gamerscore : 0,
     gamerpicUrl: settings.get('GameDisplayPicRaw') || null,
+    bio: settings.get('Bio')?.trim() || null,
+    location: settings.get('Location')?.trim() || null,
+    tenureYears: settings.has('TenureLevel') && Number.isInteger(tenure) && tenure >= 0 ? tenure : null,
+    reputation: REPUTATIONS[settings.get('XboxOneRep') ?? ''] ?? null,
   };
 }
 

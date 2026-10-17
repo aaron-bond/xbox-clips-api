@@ -46,7 +46,7 @@ Base URL: **`https://api.xbl.io/v2`**.
 | Path | Purpose |
 | :--- | :--- |
 | `GET /v2/search/{gamertag}` | Gamertag → XUID resolution. Fuzzy: returns near matches too. |
-| `GET /v2/account/{xuid}` | Profile. Takes an XUID only. Returns `profileUsers[0]` with an `id` and a `settings` array of `{ id, value }` pairs (`Gamertag`, `Gamerscore`, `GameDisplayPicRaw`, …). |
+| `GET /v2/account/{xuid}` | Profile. Takes an XUID only. Returns `profileUsers[0]` with an `id` and a `settings` array of `{ id, value }` pairs (`Gamertag`, `Gamerscore`, `GameDisplayPicRaw`, `Bio`, `Location`, `TenureLevel`, `XboxOneRep`, …). |
 | `GET /v2/dvr/gameclips/{xuid}` | Clips for any player. Paginates via a `continuationToken` query parameter. |
 | `GET /v2/marketplace/most-played` | The Xbox Store's most-played games. The same for every caller. |
 
@@ -107,6 +107,26 @@ OpenXBL wraps every proxied response as `{ "content": <upstream body>,
 "code": <status> }`. The provider unwraps `content` first. Search results
 are at `content.people[]`. Each entry carries `xuid` (a 16-digit numeric
 string), `gamertag`, `modernGamertag`, `gamerScore` and `displayPicRaw`.
+
+### Profile fields
+
+The API passes on, besides gamertag, gamerscore and gamerpic:
+
+- **`Bio` and `Location`**: player-written; empty for many players, so
+  returned as null when empty.
+- **`XboxOneRep`**: Xbox's reputation tier. `GoodPlayer`, `NeedsWork` and
+  `AvoidMe` are Xbox's Good Player, Needs Work and Avoid Me, the tiers
+  Xbox describes publicly (Xbox Wire, 2014 and 2016). Returned as `good`,
+  `needs-work`, `avoid`.
+- **`TenureLevel`**: undocumented. Read as years of Xbox network
+  membership: the Xbox 360 showed tenure as yearly badges, and real values
+  fit (Major Nelson's is 22, a test account's 19). Returned as
+  `tenureYears`, and labelled in the UI as years on Xbox. If it turns out
+  to mean something else, only that label changes.
+- `AccountTier` (`Gold`) is not passed on: it names a subscription that no
+  longer exists under that name. `PreferredColor` is a link to a colour
+  file, not a colour; using it would mean a further fetch, for a design
+  idea that was not taken up.
 
 ### Clip payload
 
@@ -340,7 +360,7 @@ Base path `/api/v1`.
 | Key | Value | TTL | Rationale |
 | :--- | :--- | :--- | :--- |
 | `xuid:{gamertag_lower}` | XUID string | 30 days | The mapping is immutable, and Profile/Social is the strictest-limited upstream service. Cache it hard. |
-| `profile:{xuid}` | `XboxUserProfile` | 2 hours | Gamerscore and presence drift, but nothing here is urgent. |
+| `profile:v2:{xuid}` | `XboxUserProfile` | 2 hours | Gamerscore and presence drift, but nothing here is urgent. |
 | `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh until the earliest `expiration` in the list minus 5 minutes (about 55 min). Kept in KV for 6 hours. | Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
 | `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
 | `clip:{xuid}:{clipId}` | Clip metadata **without** media URL | Valid until `datePublished` + 90 days. Kept in KV 30 days beyond that. | Title, game, caption, duration, thumbnail and dates never change, so share previews need no upstream call. The extra 30 days let an expired link answer `410` rather than `404`. |

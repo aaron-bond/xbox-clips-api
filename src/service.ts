@@ -33,7 +33,9 @@ export const POLICY = {
 
 export const keys = {
   xuid: (gamertag: string) => `xuid:${gamertag.toLowerCase()}`,
-  profile: (xuid: string) => `profile:${xuid}`,
+  // v2: profiles gained bio, location, tenure and reputation. Entries cached in
+  // the old shape are ignored rather than served without them.
+  profile: (xuid: string) => `profile:v2:${xuid}`,
   clips: (xuid: string) => `clips:${xuid}`,
   clip: (xuid: string, clipId: string) => `clip:${xuid}:${clipId}`,
   mostPlayed: () => 'games:most-played',

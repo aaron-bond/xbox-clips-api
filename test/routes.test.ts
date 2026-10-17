@@ -101,7 +101,7 @@ describe('players', () => {
   it('resolves a gamertag, then serves both lookups from cache', async () => {
     const { get, provider } = setup();
     provider.gamertags.set('testplayer', XUID);
-    provider.profiles.set(XUID, { xuid: XUID, gamertag: 'TestPlayer', gamerscore: 10, gamerpicUrl: null });
+    provider.profiles.set(XUID, { xuid: XUID, gamertag: 'TestPlayer', gamerscore: 10, gamerpicUrl: null, bio: null, location: null, tenureYears: null, reputation: null });
 
     const first = await get('/api/v1/players/TestPlayer');
     expect(first.status).toBe(200);
@@ -119,7 +119,7 @@ describe('players', () => {
 
   it('serves a stale profile when upstream is rate-limited', async () => {
     const { get, provider, advance } = setup();
-    provider.profiles.set(XUID, { xuid: XUID, gamertag: 'TestPlayer', gamerscore: 10, gamerpicUrl: null });
+    provider.profiles.set(XUID, { xuid: XUID, gamertag: 'TestPlayer', gamerscore: 10, gamerpicUrl: null, bio: null, location: null, tenureYears: null, reputation: null });
     await get(`/api/v1/players/${XUID}`);
 
     advance(3 * 60 * 60 * 1000); // past the 2-hour freshness window

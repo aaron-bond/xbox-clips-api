@@ -3,11 +3,23 @@
  * raw OpenXBL payloads (PLAN-v1.md §3, provider seam).
  */
 
+/** Xbox's player reputation tiers: Good Player, Needs Work, Avoid Me. */
+export type Reputation = 'good' | 'needs-work' | 'avoid';
+
 export interface XboxUserProfile {
   xuid: string;
   gamertag: string;
   gamerscore: number;
   gamerpicUrl: string | null;
+  /** Player-written; null when empty, which is common. */
+  bio: string | null;
+  location: string | null;
+  /**
+   * The profile's TenureLevel. Undocumented; read as years of Xbox network
+   * membership, which real values support (PLAN-v1.md §2).
+   */
+  tenureYears: number | null;
+  reputation: Reputation | null;
 }
 
 /**
