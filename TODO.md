@@ -5,10 +5,10 @@ any trade-off made.
 
 ## Open questions
 
-- [ ] **Career CPU time, after streaming.** Confirm in production that
-      `/career` for a 1,000-game player is now well under 10 ms. It was 13 ms
-      both parsing the whole history and parsing only 100 entries of a fully
-      decoded body.
+- [ ] **Career CPU for the heaviest players: risk accepted.** A 1,000-game
+      player's first `/career` request of the day measures 13-14 ms of CPU
+      against the free plan's 10 ms; no code change reduced it (PLAN §5). Watch
+      for `exceededCpu` outcomes; if they appear, move to Workers Paid.
 - [ ] **O3: restricted privacy. Deferred until a user reports a problem.** Call the clips endpoint for a player with
       restricted capture privacy and record what comes back. The provider
       currently treats `403` and `404` as `restricted`, and an empty `200` as
@@ -32,6 +32,10 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **Uncompressed title history tried and reverted** (2026-10-17). Asking
+      upstream for `Accept-Encoding: identity` was honoured but raised career
+      CPU from 14 to 21 ms, so Brotli decompression was not the cost.
 
 - [x] **Career history streamed, download cancelled at 100 games**
       (2026-10-17). The 100-game parse alone didn't help heavy players: decoding

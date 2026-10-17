@@ -434,12 +434,25 @@ a 1,000-game player took **13 ms** of CPU, over the free plan's 10 ms per
 request; a 731-game player took 9 ms. Parsing only the first 100 entries of
 a fully downloaded body brought the 731-game player to 6 ms but left the
 1,000-game player at 13 ms: for a heavy history, **decoding the whole 1 MB
-body into a string** was the main cost, not parsing it. Streaming fixes that,
-since only the first tenth of the body is ever decoded. Upstream cannot be
-asked for less (no filters), and appears to build the whole response before
-sending it, so stopping early shortens the wait only a little: a heavy
-player's first request of the day can still take several seconds. Waiting
-does not count as CPU.
+body into a string** was the main cost, not parsing it. The Worker
+therefore streams the body and stops at 100 games. That did not bring the
+1,000-game player down either (14 ms). Upstream sends the history
+Brotli-compressed (about 156 KB on the wire); asking for it uncompressed was
+honoured, but raised CPU to 21 ms, so decompression was not the cost. The
+measurements fit CPU tracking the bytes the runtime takes in, which the
+Worker cannot reduce: upstream accepts no filters, and the runtime appears to
+receive the whole response however early the Worker stops reading. So the
+compressed, streamed version is kept: it is correct, keeps cached facts small,
+and helps mid-sized histories (the 731-game player went from 9 to 6 ms).
+
+**Accepted risk:** for the heaviest players (roughly 1,000 games), the first
+career request of the day can exceed the free plan's 10 ms CPU. Cloudflare
+let every measured request complete, but may not always. If it does cut one
+off, the career section is missing for that visit, nothing is cached, and
+the next visit fetches again. Moving to Workers Paid (30 s CPU) removes this
+risk, and would also lift the free plan's KV write cap. Upstream builds the
+whole response before sending it, so a heavy player's first request of the
+day can take several seconds; waiting does not count as CPU.
 
 **What was given up:** a per-platform "generations" fact, which needs the
 whole history and cannot be derived from recent games; and career-best
