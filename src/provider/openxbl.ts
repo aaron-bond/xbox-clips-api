@@ -7,6 +7,7 @@ import {
   TitlesScanner,
   toAchievements,
   toCareerStats,
+  toMinutesPlayed,
   toPlayerGames,
   toMostPlayed,
   toProfile,
@@ -15,6 +16,7 @@ import {
   type RawAchievementList,
   type RawClipList,
   type RawMostPlayed,
+  type RawPlayerStats,
   type RawSearch,
   type RawStoreDetails,
 } from './openxbl-transform';
@@ -88,6 +90,13 @@ export class OpenXblProvider implements IXboxDataProvider {
     if (res.status === 403 || res.status === 404) return null;
     this.expectOk(res, 'achievements');
     return toAchievements(res.content as RawAchievementList, xbox360);
+  }
+
+  /** Minutes played in one game, for one or more players at once. */
+  async getMinutesPlayed(apiKey: string, xuids: string[], titleId: string): Promise<Record<string, number>> {
+    const res = await this.get(apiKey, '/player/stats', { xuids, stats: [{ name: 'MinutesPlayed', titleId }] });
+    this.expectOk(res, 'player/stats');
+    return toMinutesPlayed(res.content as RawPlayerStats);
   }
 
   /**

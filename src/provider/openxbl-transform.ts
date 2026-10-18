@@ -509,3 +509,26 @@ export function toAchievements(raw: RawAchievementList, xbox360: boolean): { tit
     achievements: list.map(xbox360 ? toX360Achievement : toCurrentAchievement),
   };
 }
+
+/**
+ * `POST /v2/player/stats` with body `{ xuids, stats: [{ name, titleId }] }`,
+ * observed 2026-10-18: `statlistscollection[].stats[]` holds one entry per
+ * player and stat, e.g. `{ xuid, titleid, name: "MinutesPlayed", type:
+ * "Integer", value: "2019" }` (the value is a string). Works for any player.
+ * For an Xbox 360 game the collection is empty.
+ */
+export interface RawPlayerStats {
+  statlistscollection?: { stats?: { xuid?: string; name?: string; value?: string }[] }[];
+}
+
+/** Minutes played per XUID; players Xbox reports nothing for are left out. */
+export function toMinutesPlayed(raw: RawPlayerStats): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const list of raw.statlistscollection ?? []) {
+    for (const stat of list.stats ?? []) {
+      const minutes = Number(stat.value);
+      if (stat.name === 'MinutesPlayed' && stat.xuid && Number.isFinite(minutes) && minutes >= 0) out[stat.xuid] = minutes;
+    }
+  }
+  return out;
+}

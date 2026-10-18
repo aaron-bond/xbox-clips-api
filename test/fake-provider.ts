@@ -18,9 +18,13 @@ export class FakeProvider implements IXboxDataProvider {
   /** Keyed `${xuid}:${titleId}`. */
   achievements = new Map<string, { titleName: string | null; achievements: Achievement[] } | null>();
   screenshots = new Map<string, Screenshot[]>();
-  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getAchievements: 0, getScreenshots: 0 };
+  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getAchievements: 0, getMinutesPlayed: 0, getScreenshots: 0 };
   /** The xbox360 flag of each getAchievements call, in order. */
   achievementsAsked: boolean[] = [];
+  /** Keyed `${xuid}:${titleId}`. */
+  minutes = new Map<string, number>();
+  /** When set, getMinutesPlayed throws this (other calls unaffected). */
+  minutesFailWith: AppError | null = null;
 
   async resolveGamertag(_apiKey: string, gamertag: string): Promise<string | null> {
     this.calls.resolveGamertag++;
@@ -65,6 +69,18 @@ export class FakeProvider implements IXboxDataProvider {
     this.calls.getScreenshots++;
     this.maybeFail();
     return structuredClone(this.screenshots.get(productId) ?? []);
+  }
+
+  async getMinutesPlayed(_apiKey: string, xuids: string[], titleId: string): Promise<Record<string, number>> {
+    this.calls.getMinutesPlayed++;
+    this.maybeFail();
+    if (this.minutesFailWith) throw this.minutesFailWith;
+    const out: Record<string, number> = {};
+    for (const x of xuids) {
+      const m = this.minutes.get(`${x}:${titleId}`);
+      if (m !== undefined) out[x] = m;
+    }
+    return out;
   }
 
   private maybeFail() {

@@ -15,22 +15,23 @@ const DAY = 24 * HOUR;
 export const POLICY = {
   /** Gamertag → XUID never changes. */
   xuid: { fresh: 30 * DAY, retain: 30 * DAY },
-  /** Long-lived: Microsoft throttles profile calls hardest, and a throttled refresh
-   *  falls back to the stale copy while one is retained. */
-  profile: { fresh: 12 * HOUR, retain: 48 * HOUR },
+  /** Gamerscore should keep up with achievements. Microsoft throttles profile calls
+   *  hardest, so a throttled refresh falls back to the stale copy, kept 48 hours. */
+  profile: { fresh: 2 * HOUR, retain: 48 * HOUR },
   clips: {
-    /** Fresh until this long before the earliest media URL in the list expires. */
+    /** A new clip shows within this long... */
+    fresh: 15 * MINUTE,
+    /** ...or sooner: never fresh past this long before the earliest media URL expires. */
     expiryMargin: 5 * MINUTE,
-    /** Used when a list holds no media URLs at all (e.g. a player with no clips). */
-    freshWithoutMedia: 55 * MINUTE,
     retain: 6 * HOUR,
   },
   /** Metadata is kept past deletion so an expired share link can answer 410, not 404. */
   clipMetadata: { retainPastDeletion: 30 * DAY },
-  /** Career facts change slowly; the source can be about 1 MB, so fetch it at most daily. */
-  career: { fresh: 24 * HOUR, retain: 7 * DAY },
-  /** A player's achievements in a game change as they play; an hour keeps a session's progress visible. */
-  achievements: { fresh: HOUR, retain: 7 * DAY },
+  /** The title history behind career facts and recent games: about 1 MB to read, so two hours. */
+  career: { fresh: 2 * HOUR, retain: 7 * DAY },
+  /** A player's achievements and playtime in a game change as they play. */
+  achievements: { fresh: 15 * MINUTE, retain: 7 * DAY },
+  playtime: { fresh: 15 * MINUTE, retain: 7 * DAY },
   /** The same for every visitor, so one upstream call per window serves all traffic. */
   mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
   /** Store screenshots barely change; only the parsed list (a few KB) is stored. */
@@ -51,6 +52,7 @@ export const keys = {
   // title history. v2 held the facts only.
   career: (xuid: string) => `career:v3:${xuid}`,
   achievements: (xuid: string, titleId: string) => `achievements:${xuid}:${titleId}`,
+  playtime: (xuid: string, titleId: string) => `playtime:${xuid}:${titleId}`,
   screenshots: (productId: string) => `screenshots:${productId}`,
 };
 
@@ -158,7 +160,18 @@ export class ClipService {
     // Null: the player's achievements aren't visible. Shown as none, like a private reel.
     const found = entry ?? { titleName: null, achievements: [] };
     if (found.achievements.length === 0 && !game) throw new AppError('NOT_FOUND');
-    return { xuid, titleId, game, titleName: found.titleName, lockedListed: !xbox360, achievements: found.achievements };
+    // Secondary: if playtime can't be had, the achievements still are.
+    const minutesPlayed = await this.minutesPlayed(xuid, titleId).catch(() => null);
+    return { xuid, titleId, game, titleName: found.titleName, lockedListed: !xbox360, minutesPlayed, achievements: found.achievements };
+  }
+
+  private async minutesPlayed(xuid: string, titleId: string): Promise<number | null> {
+    const entry = await this.cache.readThrough(keys.playtime(xuid, titleId), async () => {
+      const fetched = await this.provider.getMinutesPlayed(this.apiKey, [xuid], titleId);
+      const now = this.now();
+      return { value: { minutes: fetched[xuid] ?? null }, freshUntil: now + POLICY.playtime.fresh, retainUntil: now + POLICY.playtime.retain };
+    });
+    return entry!.minutes;
   }
 
   /** One upstream read per player per day serves the career facts, the games list and the 360 lookup. */
@@ -247,8 +260,9 @@ export class ClipService {
   /** Fresh until shortly before the earliest URL expires, so no cached URL is served dead. */
   private clipsFreshUntil(page: ClipPage): number {
     const expiries = page.clips.flatMap((c) => (c.media ? [Date.parse(c.media.expiresAt)] : []));
-    if (expiries.length === 0) return this.now() + POLICY.clips.freshWithoutMedia;
-    return Math.min(...expiries) - POLICY.clips.expiryMargin;
+    const window = this.now() + POLICY.clips.fresh;
+    if (expiries.length === 0) return window;
+    return Math.min(window, Math.min(...expiries) - POLICY.clips.expiryMargin);
   }
 
   /** A stale list may be served for its metadata, but never with a dead media URL (PLAN-v1.md §3). */

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toPlayerGames, toProfile, toScreenshots, toAchievements, type RawAchievementList, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toPlayerGames, toProfile, toScreenshots, toAchievements, toMinutesPlayed, type RawPlayerStats, type RawAchievementList, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
 import { titlesResponse } from './fixtures/titles';
 import { storeDetailsResponse } from './fixtures/store-details';
+import { minutesPlayedResponse, noStatsResponse } from './fixtures/player-stats';
 import { currentAchievementsResponse, x360AchievementsResponse } from './fixtures/achievements';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { accountResponse, CLIP_ID, clipsResponse, EXPIRATION, rawClip, searchResponse, XUID } from './fixtures/openxbl';
@@ -270,5 +271,12 @@ describe('toAchievements (real payloads, trimmed)', () => {
 
   it('treats an empty list as no achievements', () => {
     expect(toAchievements({}, false)).toEqual({ titleName: null, achievements: [] });
+  });
+});
+
+describe('toMinutesPlayed (real payloads)', () => {
+  it('reads minutes played per player, and nothing for an Xbox 360 game', () => {
+    expect(toMinutesPlayed(minutesPlayedResponse.content as RawPlayerStats)).toEqual({ '2584878536129841': 2019 });
+    expect(toMinutesPlayed(noStatsResponse.content as RawPlayerStats)).toEqual({});
   });
 });

@@ -26,6 +26,9 @@ export interface IXboxDataProvider {
   /** Career facts and recent games from the player's title history. Null when the history is not visible. */
   getTitleHistory(apiKey: string, xuid: string): Promise<TitleHistory | null>;
 
+  /** Minutes played in one game per XUID; players with no figure are left out. */
+  getMinutesPlayed(apiKey: string, xuids: string[], titleId: string): Promise<Record<string, number>>;
+
   /** A player's achievements in one game. Null when they are not visible. */
   getAchievements(
     apiKey: string,

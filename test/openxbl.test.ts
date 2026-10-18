@@ -6,6 +6,7 @@ import { mostPlayedResponse } from './fixtures/most-played';
 import { titlesResponse } from './fixtures/titles';
 import { storeDetailsResponse } from './fixtures/store-details';
 import { currentAchievementsResponse, x360AchievementsResponse } from './fixtures/achievements';
+import { minutesPlayedResponse } from './fixtures/player-stats';
 
 function fakeFetch(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -83,6 +84,15 @@ describe('OpenXblProvider', () => {
     const x360 = fakeFetch(200, x360AchievementsResponse);
     expect((await new OpenXblProvider(x360).getAchievements('k', XUID, '1297287449', true))?.achievements).toHaveLength(2);
     expect(x360.mock.calls[0]![0]).toBe(`https://api.xbl.io/v2/achievements/x360/${XUID}/title/1297287449`);
+  });
+
+  it('posts the players and game for minutes played', async () => {
+    const fetch = fakeFetch(200, minutesPlayedResponse);
+    const minutes = await new OpenXblProvider(fetch).getMinutesPlayed('k', ['2584878536129841'], '1661962317');
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe('https://api.xbl.io/v2/player/stats');
+    expect(JSON.parse(String(init?.body))).toEqual({ xuids: ['2584878536129841'], stats: [{ name: 'MinutesPlayed', titleId: '1661962317' }] });
+    expect(minutes).toEqual({ '2584878536129841': 2019 });
   });
 
   it('treats hidden achievements as unavailable', async () => {

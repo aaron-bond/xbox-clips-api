@@ -20,9 +20,9 @@ frontend is [xbox-clips-ui](https://github.com/aaron-bond/xbox-clips-ui).
 | `GET /api/v1/players/:identifier/clips?limit=` | `{ xuid, access, total, clips }`. `access` is `public` or `restricted`. |
 | `GET /api/v1/clips/:xuid/:clipId` | One clip with a playable media URL. |
 | `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, no media URL. Backs the UI's link previews. |
-| `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: facts from the player's last 100 games. Cached a day. |
+| `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: facts from the player's last 100 games. Cached 2 hours. |
 | `GET /api/v1/players/:identifier/games` | `{ xuid, games, limited }`: the player's recent games, from the same cached read. |
-| `GET /api/v1/players/:identifier/achievements/:titleId` | The player's achievements in one game. Cached an hour. |
+| `GET /api/v1/players/:identifier/achievements/:titleId` | The player's achievements and minutes played in one game. Cached 15 minutes. |
 | `GET /api/v1/games/most-played` | `{ games }`: the Xbox Store's most-played games, ranked. Cached 6 hours. |
 | `GET /api/v1/games/:productId` | One game from that list. |
 | `GET /api/v1/games/:productId/screenshots` | `{ screenshots }`: that game's store screenshots. Cached 7 days. |

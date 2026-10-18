@@ -49,6 +49,7 @@ Base URL: **`https://api.xbl.io/v2`**.
 | `GET /v2/account/{xuid}` | Profile. Takes an XUID only. Returns `profileUsers[0]` with an `id` and a `settings` array of `{ id, value }` pairs (`Gamertag`, `Gamerscore`, `GameDisplayPicRaw`, `Bio`, `Location`, `TenureLevel`, `XboxOneRep`, …). |
 | `GET /v2/dvr/gameclips/{xuid}` | Clips for any player. Paginates via a `continuationToken` query parameter. |
 | `GET /v2/marketplace/most-played` | The Xbox Store's most-played games. The same for every caller. Carries box art, poster, hero and square promotional art, but no screenshots. |
+| `POST /v2/player/stats` | Player statistics for any players, body `{ xuids, stats: [{ name, titleId }] }`. With `MinutesPlayed` it returns time played in a game, e.g. `{ xuid, titleid, name: "MinutesPlayed", value: "2019" }`; several players can be asked at once. Empty for an Xbox 360 game. |
 | `POST /v2/marketplace/details` | Store detail for products named in a JSON body `{ "products": "<id>" }` (comma-separated ids allowed). About 100 KB per product, so one product per call. Its images include the game's screenshots, each listed twice (Desktop and Xbox positions) with a protocol-relative `Uri` and an optional `Caption`. |
 | `GET /v2/titles/{xuid}` | A player's title history, newest first: up to 1,000 games with gamerscore progress, unlocked count (`achievement.currentAchievements`), last played and devices (`Xbox360`, `XboxOne`, `XboxSeries`, `PC`). About 1 MB for a heavy player; accepts no filters. |
 | `GET /v2/achievements/player/{xuid}/{titleId}` | A player's achievements in a current-generation game: every achievement, unlocked or not, with progress, a 16:9 image, gamerscore, rarity and a secret flag (descriptions are sent even for secret ones). About 60 KB for 49 achievements; no paging seen. |
@@ -361,7 +362,7 @@ Base path `/api/v1`.
 | `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, never a media URL. Backs the UI's link previews. Served from cached metadata. |
 | `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: facts from the player's last 100 games (now playing, biggest haul, nearest to 100%). `stats` is null when the history is hidden. |
 | `GET /api/v1/players/:identifier/games` | `{ xuid, games, limited }`: the player's recent games (at most 100, newest first) with gamerscore progress, unlocked count and an `xbox360` flag. From the same cached read as `/career`, so it costs no extra upstream call. Empty when the history is hidden. |
-| `GET /api/v1/players/:identifier/achievements/:titleId` | `{ xuid, titleId, game, titleName, lockedListed, achievements }`: the player's achievements in one game. Xbox 360 games (known from the recent games) use the 360 endpoint and set `lockedListed: false`. Hidden achievements of a recent game come back as an empty list; a title with none that isn't among the recent games is `404 NOT_FOUND`. A malformed title ID is `400 INVALID_IDENTIFIER`. |
+| `GET /api/v1/players/:identifier/achievements/:titleId` | `{ xuid, titleId, game, titleName, lockedListed, minutesPlayed, achievements }`: the player's achievements in one game, and minutes played (null when Xbox reports none). Xbox 360 games (known from the recent games) use the 360 endpoint and set `lockedListed: false`. Hidden achievements of a recent game come back as an empty list; a title with none that isn't among the recent games is `404 NOT_FOUND`. A malformed title ID is `400 INVALID_IDENTIFIER`. |
 | `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
 | `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
 | `GET /api/v1/games/:productId/screenshots` | `{ screenshots }`: the game's store screenshots (`url`, `caption` or null, `width`, `height`), in store order, at most 30. Only for games in the most-played list: any other id is `404 GAME_NOT_FOUND` before any upstream call, so arbitrary ids can't spend the budget. |
@@ -372,18 +373,29 @@ Base path `/api/v1`.
 | Key | Value | TTL | Rationale |
 | :--- | :--- | :--- | :--- |
 | `xuid:{gamertag_lower}` | XUID string | 30 days | The mapping is immutable, and Profile/Social is the strictest-limited upstream service. Cache it hard. |
-| `profile:v2:{xuid}` | `XboxUserProfile` | Fresh 12 hours, kept 48 hours | Gamerscore drifts, but nothing here is urgent, and Microsoft throttles profile calls more than any other (repeated 429s seen in production). The long freshness means fewer calls; the retention lets a throttled refresh serve the stale copy. With no copy at all the profile route fails, but the clips route does not depend on it: it needs only the XUID mapping, so a client can still show the player's clips. |
-| `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh until the earliest `expiration` in the list minus 5 minutes (about 55 min). Kept in KV for 6 hours. | Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
-| `career:v3:{xuid}` | `{ history }`: the career facts and the recent games | Fresh 24 hours, kept 7 days | One read of the title history (stopped at 100 games, §5) serves `/career`, `/games` and the Xbox 360 lookup for achievements. Only the derived facts and a trimmed games list are stored, about 20 KB, not the up to 1 MB source. A hidden history is cached as null too. v2 held the facts only. |
-| `achievements:{xuid}:{titleId}` | `{ titleName, achievements }` | Fresh 1 hour, kept 7 days | A player's progress changes as they play, so an hour keeps a session's unlocks visible. About 20 KB for 49 achievements. Hidden achievements are cached as null. |
+| `profile:v2:{xuid}` | `XboxUserProfile` | Fresh 2 hours, kept 48 hours | Short enough that gamerscore keeps up with achievements (fresh 15 minutes). Microsoft throttles profile calls more than any other (repeated 429s seen in production); the long retention lets a throttled refresh serve the stale copy. With no copy at all the profile route fails, but the clips route does not depend on it: it needs only the XUID mapping, so a client can still show the player's clips. |
+| `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh 15 minutes, or until the earliest `expiration` in the list minus 5 minutes if that is sooner. Kept in KV for 6 hours. | A new clip shows within 15 minutes of reaching Xbox. Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
+| `career:v3:{xuid}` | `{ history }`: the career facts and the recent games | Fresh 2 hours, kept 7 days | A game just played reaches the recent games and career facts within 2 hours; each refresh is the title-history read below, which carries the accepted CPU risk (§5). One read of the title history (stopped at 100 games, §5) serves `/career`, `/games` and the Xbox 360 lookup for achievements. Only the derived facts and a trimmed games list are stored, about 20 KB, not the up to 1 MB source. A hidden history is cached as null too. v2 held the facts only. |
+| `achievements:{xuid}:{titleId}` | `{ titleName, achievements }` | Fresh 15 minutes, kept 7 days | A new unlock shows within 15 minutes. About 20 KB for 49 achievements. Hidden achievements are cached as null. |
+| `playtime:{xuid}:{titleId}` | `{ minutes }` | Fresh 15 minutes, kept 7 days | Minutes played, from `POST /v2/player/stats`. Null when Xbox reports none (Xbox 360 games). A failure to fetch it never fails the achievements response. |
 | `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
 | `screenshots:{productId}` | `Screenshot[]` | Fresh 7 days, kept 30 days | Store images barely change. Only the parsed list is stored (about 5 KB for 23 screenshots), not the 100 KB detail payload. With at most 25 ranked games this is under 4 KV writes a day. |
 | `clip:{xuid}:{clipId}` | Clip metadata **without** media URL | Valid until `datePublished` + 90 days. Kept in KV 30 days beyond that. | Title, game, caption, duration, thumbnail and dates never change, so share previews need no upstream call. The extra 30 days let an expired link answer `410` rather than `404`. |
 
-The `clips:` freshness window is derived from the payload, not
-configured: the `expiration` stamps say exactly how long the URLs are
-good for. The 5-minute margin leaves time for playback to start before
-the URL dies. The 6-hour KV retention costs no extra writes, because the
+The `clips:` freshness window is 15 minutes, cut short by the payload
+when needed: the `expiration` stamps say exactly how long the URLs are
+good for, and the 5-minute margin leaves time for playback to start before
+the URL dies.
+
+**Freshness, reviewed 2026-10-18.** Windows were shortened so a player's
+own activity shows quickly and the pages agree with each other: clips and
+achievements 15 minutes, profile and title history 2 hours (from 55
+minutes, 1 hour, 12 hours and 24 hours). A stale entry is refetched while
+the visitor waits; stale-while-revalidate was considered and not adopted.
+Upstream calls happen only when someone views a player after a window
+lapses: about 9 an hour for a player watched continuously, from about 3.
+Each refresh is also a KV write, so the free plan's 1,000 writes a day
+allows roughly 100 player-hours of active viewing. The 6-hour KV retention costs no extra writes, because the
 entry is rewritten on every refetch anyway.
 
 `clip:` entries are written lazily, on the first clip or preview

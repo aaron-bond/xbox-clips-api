@@ -156,16 +156,31 @@ describe('clips', () => {
     expect(provider.calls.getClips).toBe(1);
   });
 
-  it('refetches once the cached URLs are within 5 minutes of expiry', async () => {
+  it('keeps a clip list fresh for 15 minutes, so a new clip shows within that', async () => {
     const { get, provider, advance } = setup();
     withClips(provider, page(clips)); // URLs expire 13:00
     await get(`/api/v1/players/${XUID}/clips`);
 
-    advance(54 * 60 * 1000); // 12:54, still fresh
+    advance(14 * 60 * 1000); // 12:14, still fresh
     await get(`/api/v1/players/${XUID}/clips`);
     expect(provider.calls.getClips).toBe(1);
 
-    advance(2 * 60 * 1000); // 12:56, inside the margin
+    advance(2 * 60 * 1000); // 12:16, refetched
+    await get(`/api/v1/players/${XUID}/clips`);
+    expect(provider.calls.getClips).toBe(2);
+  });
+
+  it('refetches sooner when the cached URLs are within 5 minutes of expiry', async () => {
+    const { get, provider, advance } = setup();
+    const soon = clips.map((c) => ({ ...c, media: c.media && { ...c.media, expiresAt: '2026-10-16T12:10:00.000Z' } }));
+    withClips(provider, page(soon)); // URLs expire 12:10
+    await get(`/api/v1/players/${XUID}/clips`);
+
+    advance(4 * 60 * 1000); // 12:04, still fresh
+    await get(`/api/v1/players/${XUID}/clips`);
+    expect(provider.calls.getClips).toBe(1);
+
+    advance(2 * 60 * 1000); // 12:06, inside the margin
     await get(`/api/v1/players/${XUID}/clips`);
     expect(provider.calls.getClips).toBe(2);
   });
@@ -370,16 +385,16 @@ describe('career', () => {
     biggestHaul: null, onTheBrink: null, gamesCounted: 3, limited: false,
   };
 
-  it('serves career facts, cached for a day', async () => {
+  it('serves career facts, cached for two hours', async () => {
     const { get, provider, advance } = setup();
     provider.histories.set(XUID, { stats, games: [] });
     const res = await get(`/api/v1/players/${XUID}/career`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ xuid: XUID, stats });
-    advance(23 * 60 * 60 * 1000);
+    advance(110 * 60 * 1000);
     await get(`/api/v1/players/${XUID}/career`);
     expect(provider.calls.getTitleHistory).toBe(1);
-    advance(2 * 60 * 60 * 1000);
+    advance(20 * 60 * 1000);
     await get(`/api/v1/players/${XUID}/career`);
     expect(provider.calls.getTitleHistory).toBe(2);
   });
@@ -419,7 +434,7 @@ describe('games and achievements', () => {
     expect(provider.calls.getTitleHistory).toBe(1);
   });
 
-  it("serves a game's achievements, cached for an hour, using the 360 endpoint where the history says so", async () => {
+  it("serves a game's achievements, cached for 15 minutes, using the 360 endpoint where the history says so", async () => {
     const { get, provider, advance } = setup();
     provider.histories.set(XUID, { stats, games: [game('1', 'Modern'), game('2', 'Old', true)] });
     provider.achievements.set(`${XUID}:2`, { titleName: null, achievements: [achievement(1)] });
@@ -427,10 +442,10 @@ describe('games and achievements', () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ xuid: XUID, titleId: '2', lockedListed: false, game: { name: 'Old' }, achievements: [{ name: 'A1' }] });
     expect(provider.achievementsAsked).toEqual([true]);
-    advance(50 * 60 * 1000);
+    advance(14 * 60 * 1000);
     await get(`/api/v1/players/${XUID}/achievements/2`);
     expect(provider.calls.getAchievements).toBe(1);
-    advance(20 * 60 * 1000);
+    advance(2 * 60 * 1000);
     await get(`/api/v1/players/${XUID}/achievements/2`);
     expect(provider.calls.getAchievements).toBe(2);
   });
@@ -450,5 +465,32 @@ describe('games and achievements', () => {
     provider.histories.set(XUID, { stats, games: [game('1', 'Hidden')] });
     const body = (await (await get(`/api/v1/players/${XUID}/achievements/1`)).json()) as { achievements: unknown[] };
     expect(body.achievements).toEqual([]);
+  });
+
+  it('adds minutes played, cached for 15 minutes, and serves achievements without it if it fails', async () => {
+    const { get, provider, advance } = setup();
+    provider.histories.set(XUID, { stats, games: [game('1', 'Modern')] });
+    provider.achievements.set(`${XUID}:1`, { titleName: null, achievements: [achievement(1)] });
+    provider.minutes.set(`${XUID}:1`, 2019);
+    const body = (await (await get(`/api/v1/players/${XUID}/achievements/1`)).json()) as { minutesPlayed: number | null };
+    expect(body.minutesPlayed).toBe(2019);
+    advance(14 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/achievements/1`);
+    expect(provider.calls.getMinutesPlayed).toBe(1);
+
+    advance(2 * 60 * 1000);
+    provider.minutesFailWith = new AppError('UPSTREAM_ERROR');
+    const res = await get(`/api/v1/players/${XUID}/achievements/1`);
+    expect(res.status).toBe(200);
+    // Stale playtime is served when the refresh fails under upstream pressure.
+    expect(((await res.json()) as { minutesPlayed: number | null }).minutesPlayed).toBe(2019);
+  });
+
+  it('reports no minutes played when Xbox has none', async () => {
+    const { get, provider } = setup();
+    provider.histories.set(XUID, { stats, games: [game('2', 'Old', true)] });
+    provider.achievements.set(`${XUID}:2`, { titleName: null, achievements: [achievement(1)] });
+    const body = (await (await get(`/api/v1/players/${XUID}/achievements/2`)).json()) as { minutesPlayed: number | null };
+    expect(body.minutesPlayed).toBeNull();
   });
 });
