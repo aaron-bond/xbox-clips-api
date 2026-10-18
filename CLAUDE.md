@@ -54,8 +54,7 @@ response cache; the browser streams media straight from the Xbox CDN.
   `https://api.xbl.io/docs/json` (the docs page is client-rendered), or a
   single real response. Third-party OpenXBL client libraries are out of date
   and have been wrong about what the API can do.
-- **Open items** are tracked in [TODO.md](TODO.md) and PLAN §10. Markers in
-  code: `TODO(O3)` for the unconfirmed privacy mapping.
+- **Open items** are tracked in [TODO.md](TODO.md) and PLAN §10.
 
 ## Commands
 

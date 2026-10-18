@@ -9,10 +9,6 @@ any trade-off made.
       player's first `/career` request of the day measures 13-14 ms of CPU
       against the free plan's 10 ms; no code change reduced it (PLAN §5). Watch
       for `exceededCpu` outcomes; if they appear, move to Workers Paid.
-- [ ] **O3: restricted privacy. Deferred until a user reports a problem.** Call the clips endpoint for a player with
-      restricted capture privacy and record what comes back. The provider
-      currently treats `403` and `404` as `restricted`, and an empty `200` as
-      public with no clips (`TODO(O3)` in `src/provider/openxbl.ts`).
 
 ## Later
 
@@ -25,6 +21,13 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **O3: restricted privacy answered** (2026-10-18). A player with private
+      clips returns an empty `200`, the same as a player with no clips, so
+      the API reports public and empty. Confirmed from the cache entry of a
+      real player reported to have private clips. The `403`/`404` →
+      `restricted` mapping stays, defensively.
+
 
 - [x] **Early URL death: closed until someone reports it** (2026-10-18). One
       of two measured media URLs died at least 3 minutes before its

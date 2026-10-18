@@ -538,11 +538,12 @@ One response shape for every failure:
 
 **DVR privacy is a first-class state, not an error.** A player can
 restrict who sees their captures, so a perfectly valid XUID may return an
-empty list. The response carries an explicit marker distinguishing "this
-player has no clips" from "this player's clips are not public", so the UI
-can say something true instead of showing an empty shelf. The open case
-is confirmed: a non-owner key receives a public player's clips. What a
-restricted player returns is still unconfirmed — see O3.
+empty list. **Upstream does not say which** (O3, answered 2026-10-18): a
+player whose clips are private comes back as an ordinary empty `200`,
+exactly like a player with no clips, so the API reports both as
+`access: "public"` with no clips. The `restricted` value is kept for a
+`403` or `404` from the clips endpoint, which privacy has not been seen to
+produce. A non-owner key does receive a public player's clips.
 
 **Deleted clips get their own code.** `410 CLIP_EXPIRED` tells the UI
 the clip existed and has aged out on Xbox, so a share link can say that
@@ -588,14 +589,12 @@ curl -sI '<media url>'
 - **O2 — Clip field names: answered.** See "Clip payload" in §2. The
   shape is Microsoft's GameClip object with integer enums, inside the
   OpenXBL `{ content, code }` envelope. The transformer can be written.
-- **O3 — Privacy-restricted players: half answered.** The open case is
-  confirmed: a key that does not belong to the player receives their
-  public clips. **Still open:** what a player with restricted capture
-  privacy returns (an empty list, a `403` or a `404`). Privacy denials
-  elsewhere on the Xbox network usually return `403`, which makes it the
-  leading guess, at low confidence. It needs a test
-  account whose privacy is deliberately restricted, and it determines
-  the §6 mapping.
+- **O3 — Privacy-restricted players: answered** (2026-10-18). A key that
+  does not belong to the player receives their public clips. A player
+  whose clips are private returns an empty `200`, indistinguishable from
+  a player with no clips: confirmed with a real player reported to have
+  private clips, whose cached list was public and empty. So privacy can't
+  be detected, and the UI's empty-reel message has to cover both cases.
 
 ---
 
@@ -624,9 +623,9 @@ curl -sI '<media url>'
   where finished items keep a short note on what was actually built and
   any trade-off made, since the note is more useful later than the tick.
 
-The one unconfirmed mapping is restricted privacy (O3). The provider
-treats a `403` or `404` from the clips endpoint as `restricted`, and an
-empty `200` as public with no clips. It is marked `TODO(O3)` in code.
+Restricted privacy (O3) is answered: a private reel arrives as an empty
+`200` and is reported as public with no clips. The provider still treats
+a `403` or `404` from the clips endpoint as `restricted`, defensively.
 
 ---
 
@@ -687,13 +686,12 @@ working backlog; `CLAUDE.md` is the map of the code.
 
 ### Open
 
-- **Restricted-privacy response (O3). Deferred** (2026-10-17): not
-  being tested proactively. The provider's best-guess mapping stays in
-  place (`TODO(O3)` in code), and this is revisited if a user reports a
-  player whose clips show wrongly.
+None.
 
 ### Closed
 
+- **Restricted-privacy response (O3). Answered** (2026-10-18): a private
+  reel is an empty `200`, indistinguishable from an empty one (§10).
 - **Early URL death (O1). Closed until someone reports it** (2026-10-18).
   One of two measured URLs stopped working at least 3 minutes before its
   `expiration`, cause unknown. The UI's retry-on-playback-error covers it.
@@ -710,4 +708,3 @@ working backlog; `CLAUDE.md` is the map of the code.
    player is already fetched for career stats; per-game achievements come
    from `GET /v2/achievements/player/{xuid}/{titleId}`, to be checked
    against the live spec and one real response first.
-2. Revisit O3 only if a user reports a privacy-related problem.
