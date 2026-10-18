@@ -6,7 +6,7 @@ import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
 import { isAllowedOrigin, parseAllowedOrigins } from './origins';
 import { ClipService } from './service';
-import { parseClipId, parseLimit, parsePlayerIdentifier, parseProductId, parseXuid } from './validation';
+import { parseClipId, parseLimit, parsePlayerIdentifier, parseProductId, parseTitleId, parseXuid } from './validation';
 
 export interface AppDeps {
   provider: IXboxDataProvider;
@@ -54,6 +54,19 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
   app.get('/api/v1/players/:identifier/career', async (c) => {
     const id = parsePlayerIdentifier(c.req.param('identifier'));
     return c.json(await service(c).getCareer(id));
+  });
+
+  // The player's recent games, from the same cached title history as career facts.
+  app.get('/api/v1/players/:identifier/games', async (c) => {
+    const id = parsePlayerIdentifier(c.req.param('identifier'));
+    return c.json(await service(c).getGames(id));
+  });
+
+  // A player's achievements in one game: one upstream call per player and game per hour.
+  app.get('/api/v1/players/:identifier/achievements/:titleId', async (c) => {
+    const id = parsePlayerIdentifier(c.req.param('identifier'));
+    const titleId = parseTitleId(c.req.param('titleId'));
+    return c.json(await service(c).getAchievements(id, titleId));
   });
 
   app.get('/api/v1/clips/:xuid/:clipId', async (c) => {

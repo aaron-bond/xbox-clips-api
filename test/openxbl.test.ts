@@ -5,6 +5,7 @@ import { accountResponse, clipsResponse, searchResponse, XUID } from './fixtures
 import { mostPlayedResponse } from './fixtures/most-played';
 import { titlesResponse } from './fixtures/titles';
 import { storeDetailsResponse } from './fixtures/store-details';
+import { currentAchievementsResponse, x360AchievementsResponse } from './fixtures/achievements';
 
 function fakeFetch(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -64,9 +65,28 @@ describe('OpenXblProvider', () => {
 
   it('fetches title history and keeps only the career facts', async () => {
     const fetch = fakeFetch(200, titlesResponse);
-    const stats = await new OpenXblProvider(fetch).getCareerStats('k', XUID);
+    const stats = (await new OpenXblProvider(fetch).getTitleHistory('k', XUID))?.stats;
     expect(fetch.mock.calls[0]![0]).toBe(`https://api.xbl.io/v2/titles/${XUID}`);
     expect(stats?.biggestHaul?.name).toBe('Titanfall');
+  });
+
+  it('returns the recent games alongside the career facts', async () => {
+    const history = await new OpenXblProvider(fakeFetch(200, titlesResponse)).getTitleHistory('k', XUID);
+    expect(history?.games[0]?.name).toBe("Assassin's Creed Black Flag Resynced");
+    expect(history?.games.some((g) => g.xbox360)).toBe(true);
+  });
+
+  it('asks the right endpoint for current and Xbox 360 achievements', async () => {
+    const current = fakeFetch(200, currentAchievementsResponse);
+    expect((await new OpenXblProvider(current).getAchievements('k', XUID, '1661962317', false))?.achievements).toHaveLength(3);
+    expect(current.mock.calls[0]![0]).toBe(`https://api.xbl.io/v2/achievements/player/${XUID}/1661962317`);
+    const x360 = fakeFetch(200, x360AchievementsResponse);
+    expect((await new OpenXblProvider(x360).getAchievements('k', XUID, '1297287449', true))?.achievements).toHaveLength(2);
+    expect(x360.mock.calls[0]![0]).toBe(`https://api.xbl.io/v2/achievements/x360/${XUID}/title/1297287449`);
+  });
+
+  it('treats hidden achievements as unavailable', async () => {
+    expect(await new OpenXblProvider(fakeFetch(200, { content: {}, code: 403 })).getAchievements('k', XUID, '1', false)).toBeNull();
   });
 
   it('reads only the most recent 100 games of a long history', async () => {
@@ -75,7 +95,7 @@ describe('OpenXblProvider', () => {
       achievement: { currentGamerscore: i === 120 ? 5000 : 10, totalGamerscore: 6000, progressPercentage: 1 },
       titleHistory: { lastTimePlayed: new Date(Date.UTC(2026, 0, 1) - i * 86_400_000).toISOString() },
     }));
-    const stats = await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getCareerStats('k', XUID);
+    const stats = (await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getTitleHistory('k', XUID))?.stats;
     expect(stats).toMatchObject({ gamesCounted: 100, limited: true });
     // Game 120 has the biggest haul overall, but is older than the 100 read.
     expect(stats?.biggestHaul?.name).not.toBe('Game 120');
@@ -98,7 +118,7 @@ describe('OpenXblProvider', () => {
         cancelled = true;
       },
     });
-    const stats = await new OpenXblProvider(vi.fn(async () => new Response(body))).getCareerStats('k', XUID);
+    const stats = (await new OpenXblProvider(vi.fn(async () => new Response(body))).getTitleHistory('k', XUID))?.stats;
     expect(stats).toMatchObject({ gamesCounted: 100, limited: true });
     expect(cancelled).toBe(true);
     expect(sent).toBeLessThan(text.length / 2);
@@ -106,21 +126,21 @@ describe('OpenXblProvider', () => {
 
   it('reads a short history to its end', async () => {
     const titles = [{ titleId: '1', name: 'Only', type: 'Game', achievement: { currentGamerscore: 5, totalGamerscore: 10, progressPercentage: 50 } }];
-    const stats = await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getCareerStats('k', XUID);
+    const stats = (await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getTitleHistory('k', XUID))?.stats;
     expect(stats).toMatchObject({ gamesCounted: 1, limited: false });
   });
 
   it('treats an inner 404 in the envelope as a hidden history', async () => {
-    expect(await new OpenXblProvider(fakeFetch(200, { content: {}, code: 404 })).getCareerStats('k', XUID)).toBeNull();
+    expect(await new OpenXblProvider(fakeFetch(200, { content: {}, code: 404 })).getTitleHistory('k', XUID)).toBeNull();
   });
 
   it('honours a rate limit carried in the envelope of a title history', async () => {
     const provider = new OpenXblProvider(fakeFetch(200, { content: {}, code: 429 }));
-    await expect(provider.getCareerStats('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_RATE_LIMIT' });
+    await expect(provider.getTitleHistory('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_RATE_LIMIT' });
   });
 
   it.each([403, 404])('treats a %i title history as unavailable', async (status) => {
-    expect(await new OpenXblProvider(fakeFetch(status, '')).getCareerStats('k', XUID)).toBeNull();
+    expect(await new OpenXblProvider(fakeFetch(status, '')).getTitleHistory('k', XUID)).toBeNull();
   });
 
   it('passes the continuation token through', async () => {

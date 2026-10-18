@@ -46,3 +46,11 @@ export function parseLimit(raw: string | undefined): number {
   if (!raw || !Number.isInteger(n) || n < 1) return DEFAULT_CLIP_LIMIT;
   return Math.min(n, MAX_CLIP_LIMIT);
 }
+
+const TITLE_ID = /^\d{1,10}$/;
+
+/** An Xbox title ID: decimal digits, as title history and clips report them. */
+export function parseTitleId(raw: string): string {
+  if (!TITLE_ID.test(raw)) throw new AppError('INVALID_IDENTIFIER');
+  return raw;
+}

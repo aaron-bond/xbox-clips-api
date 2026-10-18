@@ -1,4 +1,4 @@
-import type { CareerStats, ClipPage, Game, Screenshot, XboxUserProfile } from '../domain';
+import type { Achievement, ClipPage, Game, Screenshot, TitleHistory, XboxUserProfile } from '../domain';
 
 /**
  * The single seam between the service and upstream (PLAN-v1.md §3). Routing and
@@ -23,8 +23,16 @@ export interface IXboxDataProvider {
   /** The Xbox Store's most-played games, first page, ranked, duplicates merged. */
   getMostPlayedGames(apiKey: string): Promise<Game[]>;
 
-  /** Career facts from the player's title history. Null when the history is not visible. */
-  getCareerStats(apiKey: string, xuid: string): Promise<CareerStats | null>;
+  /** Career facts and recent games from the player's title history. Null when the history is not visible. */
+  getTitleHistory(apiKey: string, xuid: string): Promise<TitleHistory | null>;
+
+  /** A player's achievements in one game. Null when they are not visible. */
+  getAchievements(
+    apiKey: string,
+    xuid: string,
+    titleId: string,
+    xbox360: boolean,
+  ): Promise<{ titleName: string | null; achievements: Achievement[] } | null>;
 
   /** A store product's screenshots, in store order. Empty when it has none. */
   getScreenshots(apiKey: string, productId: string): Promise<Screenshot[]>;

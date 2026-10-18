@@ -372,16 +372,16 @@ describe('career', () => {
 
   it('serves career facts, cached for a day', async () => {
     const { get, provider, advance } = setup();
-    provider.careers.set(XUID, stats);
+    provider.histories.set(XUID, { stats, games: [] });
     const res = await get(`/api/v1/players/${XUID}/career`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ xuid: XUID, stats });
     advance(23 * 60 * 60 * 1000);
     await get(`/api/v1/players/${XUID}/career`);
-    expect(provider.calls.getCareerStats).toBe(1);
+    expect(provider.calls.getTitleHistory).toBe(1);
     advance(2 * 60 * 60 * 1000);
     await get(`/api/v1/players/${XUID}/career`);
-    expect(provider.calls.getCareerStats).toBe(2);
+    expect(provider.calls.getTitleHistory).toBe(2);
   });
 
   it('caches a hidden history as null instead of refetching it', async () => {
@@ -389,14 +389,66 @@ describe('career', () => {
     const first = (await (await get(`/api/v1/players/${XUID}/career`)).json()) as { stats: unknown };
     expect(first.stats).toBeNull();
     await get(`/api/v1/players/${XUID}/career`);
-    expect(provider.calls.getCareerStats).toBe(1);
+    expect(provider.calls.getTitleHistory).toBe(1);
   });
 
   it('resolves a gamertag first', async () => {
     const { get, provider } = setup();
     provider.gamertags.set('testplayer', XUID);
-    provider.careers.set(XUID, stats);
+    provider.histories.set(XUID, { stats, games: [] });
     const body = (await (await get('/api/v1/players/TestPlayer/career')).json()) as { xuid: string };
     expect(body.xuid).toBe(XUID);
+  });
+});
+
+describe('games and achievements', () => {
+  const game = (titleId: string, name: string, xbox360 = false) => ({
+    titleId, name, imageUrl: null, gamerscore: 10, totalGamerscore: 100, percent: 10, lastPlayed: '2026-10-11T00:00:00Z', unlocked: 2, xbox360,
+  });
+  const stats = { nowPlaying: null, biggestHaul: null, onTheBrink: null, gamesCounted: 2, limited: false };
+  const achievement = (n: number) => ({
+    id: String(n), name: `A${n}`, description: 'Do it', gamerscore: 10, imageUrl: null, secret: false, unlockedAt: null, progress: null, rarity: null,
+  });
+
+  it('serves recent games from the same cached title history as career facts', async () => {
+    const { get, provider } = setup();
+    provider.histories.set(XUID, { stats, games: [game('1', 'One'), game('2', 'Two')] });
+    await get(`/api/v1/players/${XUID}/career`);
+    const res = await get(`/api/v1/players/${XUID}/games`);
+    expect(await res.json()).toEqual({ xuid: XUID, games: [game('1', 'One'), game('2', 'Two')], limited: false });
+    expect(provider.calls.getTitleHistory).toBe(1);
+  });
+
+  it("serves a game's achievements, cached for an hour, using the 360 endpoint where the history says so", async () => {
+    const { get, provider, advance } = setup();
+    provider.histories.set(XUID, { stats, games: [game('1', 'Modern'), game('2', 'Old', true)] });
+    provider.achievements.set(`${XUID}:2`, { titleName: null, achievements: [achievement(1)] });
+    const res = await get(`/api/v1/players/${XUID}/achievements/2`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ xuid: XUID, titleId: '2', lockedListed: false, game: { name: 'Old' }, achievements: [{ name: 'A1' }] });
+    expect(provider.achievementsAsked).toEqual([true]);
+    advance(50 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/achievements/2`);
+    expect(provider.calls.getAchievements).toBe(1);
+    advance(20 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/achievements/2`);
+    expect(provider.calls.getAchievements).toBe(2);
+  });
+
+  it('answers 404 for a game with no achievements outside the recent games, and 400 for a bad title id', async () => {
+    const { get, provider } = setup();
+    provider.histories.set(XUID, { stats, games: [] });
+    const missing = await get(`/api/v1/players/${XUID}/achievements/999`);
+    expect(missing.status).toBe(404);
+    const bad = await get(`/api/v1/players/${XUID}/achievements/not-a-title`);
+    expect(bad.status).toBe(400);
+    expect(await errorCode(bad)).toBe('INVALID_IDENTIFIER');
+  });
+
+  it('shows hidden achievements of a recent game as none', async () => {
+    const { get, provider } = setup();
+    provider.histories.set(XUID, { stats, games: [game('1', 'Hidden')] });
+    const body = (await (await get(`/api/v1/players/${XUID}/achievements/1`)).json()) as { achievements: unknown[] };
+    expect(body.achievements).toEqual([]);
   });
 });

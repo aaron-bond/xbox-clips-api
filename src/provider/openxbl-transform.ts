@@ -1,4 +1,4 @@
-import type { CareerGame, CareerStats, ClipPage, Game, GameClipInfo, Reputation, Screenshot, XboxUserProfile } from '../domain';
+import type { Achievement, CareerGame, CareerStats, ClipPage, Game, GameClipInfo, PlayerGame, Reputation, Screenshot, XboxUserProfile } from '../domain';
 
 /**
  * Raw OpenXBL payload shapes, as observed in live responses on 2026-10-16
@@ -209,7 +209,9 @@ export interface RawTitle {
   name?: string;
   type?: string;
   displayImage?: string;
-  achievement?: { currentGamerscore?: number; totalGamerscore?: number; progressPercentage?: number };
+  /** e.g. ["XboxSeries"], ["XboxOne", "XboxSeries"], ["Xbox360"], ["PC"]. */
+  devices?: string[];
+  achievement?: { currentAchievements?: number; currentGamerscore?: number; totalGamerscore?: number; progressPercentage?: number };
   titleHistory?: { lastTimePlayed?: string };
 }
 
@@ -356,8 +358,19 @@ function best<T>(items: T[], score: (x: T) => number): T | null {
  * only; apps are left out. "On the brink" ignores completed games and games
  * with no gamerscore earned, and breaks ties toward the bigger game.
  */
+const isGame = (t: RawTitle) => !!t.name && (t.type ?? 'Game') === 'Game';
+
+/** The recent games themselves, newest first, for the player's achievements page. */
+export function toPlayerGames(titles: RawTitle[]): PlayerGame[] {
+  return titles.filter(isGame).map((t) => ({
+    ...toCareerGame(t),
+    unlocked: t.achievement?.currentAchievements ?? 0,
+    xbox360: (t.devices ?? []).includes('Xbox360'),
+  }));
+}
+
 export function toCareerStats(titles: RawTitle[], limited: boolean): CareerStats {
-  const games = titles.filter((t) => t.name && (t.type ?? 'Game') === 'Game');
+  const games = titles.filter(isGame);
   const time = (t: RawTitle) => Date.parse(t.titleHistory?.lastTimePlayed ?? '') || 0;
   const earned = (t: RawTitle) => t.achievement?.currentGamerscore ?? 0;
   const total = (t: RawTitle) => t.achievement?.totalGamerscore ?? 0;
@@ -414,4 +427,85 @@ export function toScreenshots(raw: RawStoreDetails, productId: string): Screensh
     if (shots.length === MAX_SCREENSHOTS) break;
   }
   return shots;
+}
+
+/**
+ * Achievements, from two upstream shapes (observed 2026-10-18):
+ *
+ * - `GET /v2/achievements/player/{xuid}/{titleId}` for current games: every
+ *   achievement, with `progressState` (`Achieved`, `InProgress`, `NotStarted`),
+ *   `progression.timeUnlocked`, `progression.requirements[0].current/target`
+ *   (strings), a 16:9 image in `mediaAssets[type=Icon].url`, gamerscore in
+ *   `rewards[type=Gamerscore].value` (a string), `rarity`, `isSecret` (the
+ *   description is sent regardless) and the game name in
+ *   `titleAssociations[0].name`. About 60 KB for 49 achievements.
+ * - `GET /v2/achievements/x360/{xuid}/title/{titleId}` for Xbox 360 games:
+ *   only the achievements the player has unlocked, each with `unlocked`,
+ *   `timeUnlocked`, a numeric `gamerscore`, `rarity` and an `imageId` but no
+ *   image URL.
+ */
+export interface RawAchievement {
+  id?: string | number;
+  name?: string;
+  description?: string;
+  lockedDescription?: string;
+  isSecret?: boolean;
+  progressState?: string;
+  progression?: { requirements?: { current?: string; target?: string }[]; timeUnlocked?: string };
+  mediaAssets?: { type?: string; url?: string }[];
+  rewards?: { type?: string; value?: string }[];
+  rarity?: { currentCategory?: string; currentPercentage?: number };
+  titleAssociations?: { name?: string }[];
+  unlocked?: boolean;
+  timeUnlocked?: string;
+  gamerscore?: number;
+}
+export interface RawAchievementList {
+  achievements?: RawAchievement[];
+}
+
+const rarityOf = (r: RawAchievement) =>
+  r.rarity?.currentCategory && typeof r.rarity.currentPercentage === 'number'
+    ? { category: r.rarity.currentCategory, percent: r.rarity.currentPercentage }
+    : null;
+
+function toCurrentAchievement(r: RawAchievement): Achievement {
+  const achieved = r.progressState === 'Achieved';
+  const req = r.progression?.requirements?.[0];
+  const current = Number(req?.current);
+  const target = Number(req?.target);
+  return {
+    id: String(r.id ?? ''),
+    name: r.name ?? '',
+    description: (achieved ? r.description : r.lockedDescription || r.description) ?? '',
+    gamerscore: Number(r.rewards?.find((x) => x.type === 'Gamerscore')?.value) || 0,
+    imageUrl: r.mediaAssets?.find((m) => m.type === 'Icon')?.url ?? null,
+    secret: r.isSecret === true,
+    unlockedAt: achieved ? (r.progression?.timeUnlocked ?? null) : null,
+    progress:
+      r.progressState === 'InProgress' && Number.isFinite(current) && target > 1 ? { current: Math.min(current, target), target } : null,
+    rarity: rarityOf(r),
+  };
+}
+
+function toX360Achievement(r: RawAchievement): Achievement {
+  return {
+    id: String(r.id ?? ''),
+    name: r.name ?? '',
+    description: (r.unlocked ? r.description : r.lockedDescription || r.description) ?? '',
+    gamerscore: r.gamerscore ?? 0,
+    imageUrl: null,
+    secret: r.isSecret === true,
+    unlockedAt: r.unlocked ? (r.timeUnlocked ?? null) : null,
+    progress: null,
+    rarity: rarityOf(r),
+  };
+}
+
+export function toAchievements(raw: RawAchievementList, xbox360: boolean): { titleName: string | null; achievements: Achievement[] } {
+  const list = (raw.achievements ?? []).filter((r) => r.name);
+  return {
+    titleName: list[0]?.titleAssociations?.[0]?.name ?? null,
+    achievements: list.map(xbox360 ? toX360Achievement : toCurrentAchievement),
+  };
 }

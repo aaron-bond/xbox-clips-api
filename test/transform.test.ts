@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, toScreenshots, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toPlayerGames, toProfile, toScreenshots, toAchievements, type RawAchievementList, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
 import { titlesResponse } from './fixtures/titles';
 import { storeDetailsResponse } from './fixtures/store-details';
+import { currentAchievementsResponse, x360AchievementsResponse } from './fixtures/achievements';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { accountResponse, CLIP_ID, clipsResponse, EXPIRATION, rawClip, searchResponse, XUID } from './fixtures/openxbl';
 
@@ -234,5 +235,40 @@ describe('toScreenshots (real payload, trimmed)', () => {
     expect(shots.map((s) => s.caption)).toEqual([null, null]);
     expect(toScreenshots({ Products: [{ ProductId: 'X', LocalizedProperties: [{ Images: [] }] }] }, 'X')).toEqual([]);
     expect(toScreenshots({}, 'X')).toEqual([]);
+  });
+});
+
+describe('toPlayerGames (real payload, trimmed)', () => {
+  const games = toPlayerGames(titlesResponse.content.titles as unknown as RawTitle[]);
+
+  it('lists games newest first with progress and unlocked counts, flagging Xbox 360 games', () => {
+    expect(games[0]).toMatchObject({ titleId: '1661962317', name: "Assassin's Creed Black Flag Resynced", gamerscore: 330, totalGamerscore: 1000, unlocked: 19, xbox360: false });
+    expect(games[0]!.imageUrl).toMatch(/^https:/);
+    expect(games.find((g) => g.name === 'Halo 4')).toMatchObject({ xbox360: true, unlocked: 59 });
+  });
+});
+
+describe('toAchievements (real payloads, trimmed)', () => {
+  it('reads current-generation achievements: unlocked, in progress, and secret', () => {
+    const { titleName, achievements } = toAchievements(currentAchievementsResponse.content as RawAchievementList, false);
+    expect(titleName).toBe("Assassin's Creed Black Flag");
+    const [unlocked, progress, secret] = achievements;
+    expect(unlocked).toMatchObject({ name: 'Articles Of Agreement', progress: null, secret: false });
+    expect(unlocked!.unlockedAt).toMatch(/^2026-/);
+    expect(unlocked!.imageUrl).toMatch(/^https:\/\/images-eds-ssl\.xboxlive\.com\//);
+    expect(unlocked!.rarity).toEqual({ category: 'Common', percent: expect.any(Number) });
+    expect(progress).toMatchObject({ name: 'The Hangman', unlockedAt: null, progress: { current: 60, target: 100 } });
+    expect(secret).toMatchObject({ name: 'Last To Leave', secret: true, unlockedAt: null, gamerscore: 50 });
+  });
+
+  it('reads Xbox 360 achievements, which arrive unlocked and without art', () => {
+    const { achievements } = toAchievements(x360AchievementsResponse.content as RawAchievementList, true);
+    expect(achievements).toHaveLength(2);
+    expect(achievements[0]).toMatchObject({ name: 'Outta My Way!', gamerscore: 40, imageUrl: null, progress: null, rarity: { category: 'Rare', percent: 1.03 } });
+    expect(achievements[0]!.unlockedAt).toMatch(/^2017-/);
+  });
+
+  it('treats an empty list as no achievements', () => {
+    expect(toAchievements({}, false)).toEqual({ titleName: null, achievements: [] });
   });
 });

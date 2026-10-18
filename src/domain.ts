@@ -136,3 +136,49 @@ export function toMetadata(clip: GameClipInfo): ClipMetadata {
   const { views: _views, media: _media, ...metadata } = clip;
   return metadata;
 }
+
+/** One of a player's recent games, for their achievements page. */
+export interface PlayerGame extends CareerGame {
+  /** Achievements unlocked. */
+  unlocked: number;
+  /** An Xbox 360 game: its achievements come from a different upstream endpoint, unlocked ones only. */
+  xbox360: boolean;
+}
+
+/** What one read of a player's title history yields: the career facts and the recent games behind them. */
+export interface TitleHistory {
+  stats: CareerStats;
+  /** Most recent first, at most CAREER_GAMES, games only (no apps). */
+  games: PlayerGame[];
+}
+
+/** One achievement, as the player stands with it. */
+export interface Achievement {
+  id: string;
+  name: string;
+  description: string;
+  gamerscore: number;
+  /** Achievement art, 16:9. Null for Xbox 360 games, whose art upstream doesn't provide. */
+  imageUrl: string | null;
+  /** Secret achievements: the description is sent anyway; clients hide it until unlocked. */
+  secret: boolean;
+  /** When the player unlocked it; null while locked. */
+  unlockedAt: string | null;
+  /** Progress towards a locked achievement, when upstream tracks it. */
+  progress: { current: number; target: number } | null;
+  /** Share of players who have it, e.g. { category: 'Rare', percent: 1.76 }. */
+  rarity: { category: string; percent: number } | null;
+}
+
+/** A player's achievements in one game. */
+export interface GameAchievements {
+  xuid: string;
+  titleId: string;
+  /** The game, when it is among the player's recent games. */
+  game: PlayerGame | null;
+  /** The game's name from the achievements themselves, for games outside the recent list. */
+  titleName: string | null;
+  /** False for Xbox 360 games, where only unlocked achievements are listed. */
+  lockedListed: boolean;
+  achievements: Achievement[];
+}

@@ -1,5 +1,5 @@
 import { Cache } from './cache';
-import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameClipInfo, type Screenshot, type XboxUserProfile } from './domain';
+import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameAchievements, type GameClipInfo, type PlayerGame, type Screenshot, type TitleHistory, type XboxUserProfile } from './domain';
 import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
 import type { PlayerIdentifier } from './validation';
@@ -29,6 +29,8 @@ export const POLICY = {
   clipMetadata: { retainPastDeletion: 30 * DAY },
   /** Career facts change slowly; the source can be about 1 MB, so fetch it at most daily. */
   career: { fresh: 24 * HOUR, retain: 7 * DAY },
+  /** A player's achievements in a game change as they play; an hour keeps a session's progress visible. */
+  achievements: { fresh: HOUR, retain: 7 * DAY },
   /** The same for every visitor, so one upstream call per window serves all traffic. */
   mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
   /** Store screenshots barely change; only the parsed list (a few KB) is stored. */
@@ -45,8 +47,10 @@ export const keys = {
   clips: (xuid: string) => `clips:${xuid}`,
   clip: (xuid: string, clipId: string) => `clip:${xuid}:${clipId}`,
   mostPlayed: () => 'games:most-played',
-  // v2: facts from the most recent 100 games, without platforms.
-  career: (xuid: string) => `career:v2:${xuid}`,
+  // v3: the career facts and the recent games they came from, from one read of the
+  // title history. v2 held the facts only.
+  career: (xuid: string) => `career:v3:${xuid}`,
+  achievements: (xuid: string, titleId: string) => `achievements:${xuid}:${titleId}`,
   screenshots: (productId: string) => `screenshots:${productId}`,
 };
 
@@ -127,12 +131,44 @@ export class ClipService {
    */
   async getCareer(id: PlayerIdentifier): Promise<{ xuid: string; stats: CareerStats | null }> {
     const xuid = await this.resolveXuid(id);
-    const entry = await this.cache.readThrough(keys.career(xuid), async () => {
-      const stats = await this.provider.getCareerStats(this.apiKey, xuid);
+    return { xuid, stats: (await this.titleHistory(xuid))?.stats ?? null };
+  }
+
+  /** The player's recent games, from the same cached read of the title history as the career facts. */
+  async getGames(id: PlayerIdentifier): Promise<{ xuid: string; games: PlayerGame[]; limited: boolean }> {
+    const xuid = await this.resolveXuid(id);
+    const history = await this.titleHistory(xuid);
+    return { xuid, games: history?.games ?? [], limited: history?.stats.limited ?? false };
+  }
+
+  /**
+   * A player's achievements in one game. The recent games say whether it is an
+   * Xbox 360 game, which takes a different upstream endpoint; a game outside
+   * them is treated as current.
+   */
+  async getAchievements(id: PlayerIdentifier, titleId: string): Promise<GameAchievements> {
+    const xuid = await this.resolveXuid(id);
+    const game = (await this.titleHistory(xuid))?.games.find((g) => g.titleId === titleId) ?? null;
+    const xbox360 = game?.xbox360 ?? false;
+    const entry = await this.cache.readThrough(keys.achievements(xuid, titleId), async () => {
+      const fetched = await this.provider.getAchievements(this.apiKey, xuid, titleId, xbox360);
       const now = this.now();
-      return { value: { stats }, freshUntil: now + POLICY.career.fresh, retainUntil: now + POLICY.career.retain };
+      return { value: fetched, freshUntil: now + POLICY.achievements.fresh, retainUntil: now + POLICY.achievements.retain };
     });
-    return { xuid, stats: entry!.stats };
+    // Null: the player's achievements aren't visible. Shown as none, like a private reel.
+    const found = entry ?? { titleName: null, achievements: [] };
+    if (found.achievements.length === 0 && !game) throw new AppError('NOT_FOUND');
+    return { xuid, titleId, game, titleName: found.titleName, lockedListed: !xbox360, achievements: found.achievements };
+  }
+
+  /** One upstream read per player per day serves the career facts, the games list and the 360 lookup. */
+  private async titleHistory(xuid: string): Promise<TitleHistory | null> {
+    const entry = await this.cache.readThrough(keys.career(xuid), async () => {
+      const history = await this.provider.getTitleHistory(this.apiKey, xuid);
+      const now = this.now();
+      return { value: { history }, freshUntil: now + POLICY.career.fresh, retainUntil: now + POLICY.career.retain };
+    });
+    return entry!.history;
   }
 
   async getMostPlayed(): Promise<Game[]> {

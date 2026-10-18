@@ -1,15 +1,18 @@
-import type { CareerStats, ClipPage, Game, Screenshot, XboxUserProfile } from '../domain';
+import type { Achievement, ClipPage, Game, Screenshot, TitleHistory, XboxUserProfile } from '../domain';
 import { AppError } from '../errors';
 import {
   pickSearchMatch,
   toClipPage,
   CAREER_GAMES,
   TitlesScanner,
+  toAchievements,
   toCareerStats,
+  toPlayerGames,
   toMostPlayed,
   toProfile,
   toScreenshots,
   type RawAccount,
+  type RawAchievementList,
   type RawClipList,
   type RawMostPlayed,
   type RawSearch,
@@ -71,13 +74,30 @@ export class OpenXblProvider implements IXboxDataProvider {
   }
 
   /**
-   * Career facts from the player's most recent games. The title history can be
-   * about 1 MB and arrives newest first, so the body is read as it streams in
+   * A player's achievements in one game; null when they aren't visible. Xbox 360
+   * games use their own endpoint, which lists only unlocked achievements.
+   */
+  async getAchievements(
+    apiKey: string,
+    xuid: string,
+    titleId: string,
+    xbox360: boolean,
+  ): Promise<{ titleName: string | null; achievements: Achievement[] } | null> {
+    const path = xbox360 ? `/achievements/x360/${xuid}/title/${titleId}` : `/achievements/player/${xuid}/${titleId}`;
+    const res = await this.get(apiKey, path);
+    if (res.status === 403 || res.status === 404) return null;
+    this.expectOk(res, 'achievements');
+    return toAchievements(res.content as RawAchievementList, xbox360);
+  }
+
+  /**
+   * Career facts and recent games from the player's most recent games. The
+   * title history can be about 1 MB and arrives newest first, so the body is read as it streams in
    * and the download is cancelled once the first CAREER_GAMES titles have
    * arrived (PLAN-v1.md §5). A hidden history (403/404) is not an error: the
    * facts are simply unavailable.
    */
-  async getCareerStats(apiKey: string, xuid: string): Promise<CareerStats | null> {
+  async getTitleHistory(apiKey: string, xuid: string): Promise<TitleHistory | null> {
     const path = `/titles/${xuid}`;
     let res: Response;
     try {
@@ -123,7 +143,7 @@ export class OpenXblProvider implements IXboxDataProvider {
     }
 
     const { titles, more } = scanner.result();
-    return toCareerStats(titles, more);
+    return { stats: toCareerStats(titles, more), games: toPlayerGames(titles) };
   }
 
   /** GET, or POST with a JSON body when `body` is given. */

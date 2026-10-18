@@ -1,4 +1,4 @@
-import type { CareerStats, ClipPage, Game, GameClipInfo, Screenshot, XboxUserProfile } from '../src/domain';
+import type { Achievement, ClipPage, Game, GameClipInfo, Screenshot, TitleHistory, XboxUserProfile } from '../src/domain';
 import { AppError } from '../src/errors';
 import type { IXboxDataProvider } from '../src/provider/types';
 
@@ -14,9 +14,13 @@ export class FakeProvider implements IXboxDataProvider {
   /** When set, every call throws this. */
   failWith: AppError | null = null;
   mostPlayed: Game[] = [];
-  careers = new Map<string, CareerStats | null>();
+  histories = new Map<string, TitleHistory | null>();
+  /** Keyed `${xuid}:${titleId}`. */
+  achievements = new Map<string, { titleName: string | null; achievements: Achievement[] } | null>();
   screenshots = new Map<string, Screenshot[]>();
-  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getCareerStats: 0, getScreenshots: 0 };
+  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getAchievements: 0, getScreenshots: 0 };
+  /** The xbox360 flag of each getAchievements call, in order. */
+  achievementsAsked: boolean[] = [];
 
   async resolveGamertag(_apiKey: string, gamertag: string): Promise<string | null> {
     this.calls.resolveGamertag++;
@@ -44,10 +48,17 @@ export class FakeProvider implements IXboxDataProvider {
     return structuredClone(this.mostPlayed);
   }
 
-  async getCareerStats(_apiKey: string, xuid: string): Promise<CareerStats | null> {
-    this.calls.getCareerStats++;
+  async getTitleHistory(_apiKey: string, xuid: string): Promise<TitleHistory | null> {
+    this.calls.getTitleHistory++;
     this.maybeFail();
-    return structuredClone(this.careers.get(xuid) ?? null);
+    return structuredClone(this.histories.get(xuid) ?? null);
+  }
+
+  async getAchievements(_apiKey: string, xuid: string, titleId: string, xbox360: boolean) {
+    this.calls.getAchievements++;
+    this.achievementsAsked.push(xbox360);
+    this.maybeFail();
+    return structuredClone(this.achievements.get(`${xuid}:${titleId}`) ?? null);
   }
 
   async getScreenshots(_apiKey: string, productId: string): Promise<Screenshot[]> {
