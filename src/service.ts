@@ -15,7 +15,9 @@ const DAY = 24 * HOUR;
 export const POLICY = {
   /** Gamertag → XUID never changes. */
   xuid: { fresh: 30 * DAY, retain: 30 * DAY },
-  profile: { fresh: 2 * HOUR, retain: 24 * HOUR },
+  /** Long-lived: Microsoft throttles profile calls hardest, and a throttled refresh
+   *  falls back to the stale copy while one is retained. */
+  profile: { fresh: 12 * HOUR, retain: 48 * HOUR },
   clips: {
     /** Fresh until this long before the earliest media URL in the list expires. */
     expiryMargin: 5 * MINUTE,

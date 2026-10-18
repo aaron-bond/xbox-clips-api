@@ -362,7 +362,7 @@ Base path `/api/v1`.
 | Key | Value | TTL | Rationale |
 | :--- | :--- | :--- | :--- |
 | `xuid:{gamertag_lower}` | XUID string | 30 days | The mapping is immutable, and Profile/Social is the strictest-limited upstream service. Cache it hard. |
-| `profile:v2:{xuid}` | `XboxUserProfile` | 2 hours | Gamerscore and presence drift, but nothing here is urgent. |
+| `profile:v2:{xuid}` | `XboxUserProfile` | Fresh 12 hours, kept 48 hours | Gamerscore drifts, but nothing here is urgent, and Microsoft throttles profile calls more than any other (repeated 429s seen in production). The long freshness means fewer calls; the retention lets a throttled refresh serve the stale copy. With no copy at all the profile route fails, but the clips route does not depend on it: it needs only the XUID mapping, so a client can still show the player's clips. |
 | `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh until the earliest `expiration` in the list minus 5 minutes (about 55 min). Kept in KV for 6 hours. | Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
 | `career:v2:{xuid}` | `{ stats }`, facts only | Fresh 24 hours, kept 7 days | The source can be about 1 MB; only the derived facts (a few hundred bytes) are stored. A hidden history is cached as null too. |
 | `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
