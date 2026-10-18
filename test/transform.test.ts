@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, type RawMostPlayed, type RawTitle } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toProfile, toScreenshots, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
 import { titlesResponse } from './fixtures/titles';
+import { storeDetailsResponse } from './fixtures/store-details';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { accountResponse, CLIP_ID, clipsResponse, EXPIRATION, rawClip, searchResponse, XUID } from './fixtures/openxbl';
 
@@ -209,5 +210,29 @@ describe('toCareerStats (real payload, trimmed)', () => {
 
   it('copes with an empty history', () => {
     expect(toCareerStats([], false)).toEqual({ nowPlaying: null, biggestHaul: null, onTheBrink: null, gamesCounted: 0, limited: false });
+  });
+});
+
+describe('toScreenshots (real payload, trimmed)', () => {
+  const raw = storeDetailsResponse.content as RawStoreDetails;
+
+  it('keeps screenshots only, each once, with https URLs and captions', () => {
+    const shots = toScreenshots(raw, '9N4PT8HGCDHQ');
+    expect(shots).toHaveLength(2);
+    expect(shots[0]).toEqual({
+      url: expect.stringMatching(/^https:\/\/store-images\.s-microsoft\.com\/image\//),
+      caption: 'Marcus in front of a Corpser',
+      width: 3840,
+      height: 2160,
+    });
+    expect(shots[1]!.caption).toBe('COG squad facing the camera');
+  });
+
+  it('treats a null or blank caption as none, and a product without screenshots as empty', () => {
+    const shot = (Caption: string | null) => ({ ImagePurpose: 'Screenshot', Uri: `//img.test/${Caption ?? 'null'}`, Width: 1920, Height: 1080, Caption });
+    const shots = toScreenshots({ Products: [{ ProductId: 'X', LocalizedProperties: [{ Images: [shot(null), shot('  ')] }] }] }, 'X');
+    expect(shots.map((s) => s.caption)).toEqual([null, null]);
+    expect(toScreenshots({ Products: [{ ProductId: 'X', LocalizedProperties: [{ Images: [] }] }] }, 'X')).toEqual([]);
+    expect(toScreenshots({}, 'X')).toEqual([]);
   });
 });

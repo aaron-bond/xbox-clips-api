@@ -79,6 +79,12 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
     return c.json(await service(c).getGame(productId));
   });
 
+  // Store screenshots for a ranked game: one upstream call per game per week.
+  app.get('/api/v1/games/:productId/screenshots', async (c) => {
+    const productId = parseProductId(c.req.param('productId'));
+    return c.json({ screenshots: await service(c).getScreenshots(productId) });
+  });
+
   app.notFound((c) => {
     const err = new AppError('NOT_FOUND');
     return c.json(err.toBody(), err.status);

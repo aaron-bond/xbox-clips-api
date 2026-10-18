@@ -1,4 +1,4 @@
-import type { CareerGame, CareerStats, ClipPage, Game, GameClipInfo, Reputation, XboxUserProfile } from '../domain';
+import type { CareerGame, CareerStats, ClipPage, Game, GameClipInfo, Reputation, Screenshot, XboxUserProfile } from '../domain';
 
 /**
  * Raw OpenXBL payload shapes, as observed in live responses on 2026-10-16
@@ -376,4 +376,42 @@ export function toCareerStats(titles: RawTitle[], limited: boolean): CareerStats
     gamesCounted: games.length,
     limited,
   };
+}
+
+/**
+ * `POST /v2/marketplace/details` with body `{ "products": "<productId>" }`,
+ * observed 2026-10-18. About 100 KB per product. Images sit at
+ * `Products[].LocalizedProperties[0].Images[]`; screenshots have
+ * `ImagePurpose: "Screenshot"`. Each is usually listed twice, once per
+ * `ImagePositionInfo` (`Desktop/1`, `Xbox/1`, …) with the same `Uri`. `Uri` is
+ * protocol-relative (`//store-images…`). `Caption` may be null or empty.
+ */
+export interface RawStoreDetailImage {
+  ImagePurpose?: string;
+  Uri?: string;
+  Width?: number;
+  Height?: number;
+  Caption?: string | null;
+}
+export interface RawStoreDetails {
+  Products?: { ProductId?: string; LocalizedProperties?: { Images?: RawStoreDetailImage[] }[] }[];
+}
+
+/** Upper bound on stored screenshots per game; the store has listed 23 for one game. */
+export const MAX_SCREENSHOTS = 30;
+
+/** The product's store screenshots, in store order, each once. */
+export function toScreenshots(raw: RawStoreDetails, productId: string): Screenshot[] {
+  const product = raw.Products?.find((p) => p.ProductId?.toUpperCase() === productId) ?? raw.Products?.[0];
+  const seen = new Set<string>();
+  const shots: Screenshot[] = [];
+  for (const img of product?.LocalizedProperties?.[0]?.Images ?? []) {
+    if (img.ImagePurpose !== 'Screenshot' || !img.Uri) continue;
+    const url = img.Uri.startsWith('//') ? `https:${img.Uri}` : img.Uri;
+    if (!url.startsWith('https://') || seen.has(url)) continue;
+    seen.add(url);
+    shots.push({ url, caption: img.Caption?.trim() || null, width: img.Width ?? 0, height: img.Height ?? 0 });
+    if (shots.length === MAX_SCREENSHOTS) break;
+  }
+  return shots;
 }

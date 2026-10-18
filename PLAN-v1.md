@@ -48,12 +48,17 @@ Base URL: **`https://api.xbl.io/v2`**.
 | `GET /v2/search/{gamertag}` | Gamertag → XUID resolution. Fuzzy: returns near matches too. |
 | `GET /v2/account/{xuid}` | Profile. Takes an XUID only. Returns `profileUsers[0]` with an `id` and a `settings` array of `{ id, value }` pairs (`Gamertag`, `Gamerscore`, `GameDisplayPicRaw`, `Bio`, `Location`, `TenureLevel`, `XboxOneRep`, …). |
 | `GET /v2/dvr/gameclips/{xuid}` | Clips for any player. Paginates via a `continuationToken` query parameter. |
-| `GET /v2/marketplace/most-played` | The Xbox Store's most-played games. The same for every caller. |
+| `GET /v2/marketplace/most-played` | The Xbox Store's most-played games. The same for every caller. Carries box art, poster, hero and square promotional art, but no screenshots. |
+| `POST /v2/marketplace/details` | Store detail for products named in a JSON body `{ "products": "<id>" }` (comma-separated ids allowed). About 100 KB per product, so one product per call. Its images include the game's screenshots, each listed twice (Desktop and Xbox positions) with a protocol-relative `Uri` and an optional `Caption`. |
 | `GET /v2/titles/{xuid}` | A player's title history, newest first: up to 1,000 games with gamerscore progress, last played and platforms. About 1 MB for a heavy player; accepts no filters. |
 
 Two further endpoints exist and are not used in v1:
 `GET /v2/dvr/gameclips` (the key owner's own clips) and
-`GET /v2/dvr/screenshots/{xuid}`.
+`GET /v2/dvr/screenshots/{xuid}`. The screenshots endpoint is not worth
+building on: on 2026-10-18 it returned an empty list (`200`, with
+`pagingInfo`) for two players, one of them an account known to have
+screenshots and whose clips are public. A non-null continuation token
+on the first page led only to a second empty page.
 
 **There is no single-clip endpoint and no URL-refresh endpoint.**
 Microsoft's underlying gameclips service documents a refresh API, but
@@ -355,6 +360,7 @@ Base path `/api/v1`.
 | `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: facts from the player's last 100 games (now playing, biggest haul, nearest to 100%). `stats` is null when the history is hidden. |
 | `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
 | `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
+| `GET /api/v1/games/:productId/screenshots` | `{ screenshots }`: the game's store screenshots (`url`, `caption` or null, `width`, `height`), in store order, at most 30. Only for games in the most-played list: any other id is `404 GAME_NOT_FOUND` before any upstream call, so arbitrary ids can't spend the budget. |
 | `GET /health` | Liveness. |
 
 ### Cache key schema
@@ -366,6 +372,7 @@ Base path `/api/v1`.
 | `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh until the earliest `expiration` in the list minus 5 minutes (about 55 min). Kept in KV for 6 hours. | Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
 | `career:v2:{xuid}` | `{ stats }`, facts only | Fresh 24 hours, kept 7 days | The source can be about 1 MB; only the derived facts (a few hundred bytes) are stored. A hidden history is cached as null too. |
 | `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
+| `screenshots:{productId}` | `Screenshot[]` | Fresh 7 days, kept 30 days | Store images barely change. Only the parsed list is stored (about 5 KB for 23 screenshots), not the 100 KB detail payload. With at most 25 ranked games this is under 4 KV writes a day. |
 | `clip:{xuid}:{clipId}` | Clip metadata **without** media URL | Valid until `datePublished` + 90 days. Kept in KV 30 days beyond that. | Title, game, caption, duration, thumbnail and dates never change, so share previews need no upstream call. The extra 30 days let an expired link answer `410` rather than `404`. |
 
 The `clips:` freshness window is derived from the payload, not

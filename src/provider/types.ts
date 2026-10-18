@@ -1,4 +1,4 @@
-import type { CareerStats, ClipPage, Game, XboxUserProfile } from '../domain';
+import type { CareerStats, ClipPage, Game, Screenshot, XboxUserProfile } from '../domain';
 
 /**
  * The single seam between the service and upstream (PLAN-v1.md §3). Routing and
@@ -25,4 +25,7 @@ export interface IXboxDataProvider {
 
   /** Career facts from the player's title history. Null when the history is not visible. */
   getCareerStats(apiKey: string, xuid: string): Promise<CareerStats | null>;
+
+  /** A store product's screenshots, in store order. Empty when it has none. */
+  getScreenshots(apiKey: string, productId: string): Promise<Screenshot[]>;
 }

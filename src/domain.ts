@@ -89,6 +89,18 @@ export interface Game {
   boxArtUrl: string | null;
 }
 
+/**
+ * A store screenshot of a game. `url` is a Microsoft Store image URL; the
+ * originals are up to 4K, so clients always request a size (`?w=1280`).
+ */
+export interface Screenshot {
+  url: string;
+  /** The store's description of the image, when it has one. Good alt text. */
+  caption: string | null;
+  width: number;
+  height: number;
+}
+
 /** One game in a player's career facts. */
 export interface CareerGame {
   titleId: string;

@@ -1,4 +1,4 @@
-import type { CareerStats, ClipPage, Game, XboxUserProfile } from '../domain';
+import type { CareerStats, ClipPage, Game, Screenshot, XboxUserProfile } from '../domain';
 import { AppError } from '../errors';
 import {
   pickSearchMatch,
@@ -8,10 +8,12 @@ import {
   toCareerStats,
   toMostPlayed,
   toProfile,
+  toScreenshots,
   type RawAccount,
   type RawClipList,
   type RawMostPlayed,
   type RawSearch,
+  type RawStoreDetails,
 } from './openxbl-transform';
 import type { IXboxDataProvider } from './types';
 
@@ -59,6 +61,13 @@ export class OpenXblProvider implements IXboxDataProvider {
     const res = await this.get(apiKey, '/marketplace/most-played');
     this.expectOk(res, 'marketplace/most-played');
     return toMostPlayed(res.content as RawMostPlayed);
+  }
+
+  /** Store screenshots for one product. One product per call: a detail response is about 100 KB. */
+  async getScreenshots(apiKey: string, productId: string): Promise<Screenshot[]> {
+    const res = await this.get(apiKey, '/marketplace/details', { products: productId });
+    this.expectOk(res, 'marketplace/details');
+    return toScreenshots(res.content as RawStoreDetails, productId);
   }
 
   /**
@@ -117,14 +126,22 @@ export class OpenXblProvider implements IXboxDataProvider {
     return toCareerStats(titles, more);
   }
 
-  private async get(apiKey: string, path: string): Promise<UpstreamResult> {
+  /** GET, or POST with a JSON body when `body` is given. */
+  private async get(apiKey: string, path: string, body?: unknown): Promise<UpstreamResult> {
+    const method = body === undefined ? 'GET' : 'POST';
     let res: Response;
     try {
       res = await this.fetchImpl(BASE_URL + path, {
-        headers: { 'X-Authorization': apiKey, Accept: 'application/json' },
+        method,
+        headers: {
+          'X-Authorization': apiKey,
+          Accept: 'application/json',
+          ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (err) {
-      console.error(`upstream unreachable: GET ${path}`, err);
+      console.error(`upstream unreachable: ${method} ${path}`, err);
       throw new AppError('UPSTREAM_ERROR');
     }
 
@@ -134,9 +151,9 @@ export class OpenXblProvider implements IXboxDataProvider {
     }
 
     const text = await res.text();
-    let body: unknown = null;
+    let parsed: unknown = null;
     try {
-      body = text ? JSON.parse(text) : null;
+      parsed = text ? JSON.parse(text) : null;
     } catch {
       // Non-JSON bodies are handled by status below.
     }
@@ -144,19 +161,19 @@ export class OpenXblProvider implements IXboxDataProvider {
     // OpenXBL wraps proxied responses as { content, code }; the inner code is the
     // upstream status, and wins when present.
     let status = res.status;
-    let content = body;
-    if (body && typeof body === 'object' && 'content' in body && 'code' in body) {
-      content = (body as { content: unknown }).content;
-      const code = (body as { code: unknown }).code;
+    let content = parsed;
+    if (parsed && typeof parsed === 'object' && 'content' in parsed && 'code' in parsed) {
+      content = (parsed as { content: unknown }).content;
+      const code = (parsed as { code: unknown }).code;
       if (typeof code === 'number') status = code;
     }
 
     if (status === 429) {
-      console.warn(`upstream rate limit: GET ${path}`);
+      console.warn(`upstream rate limit: ${method} ${path}`);
       throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
     }
     if (status >= 500) {
-      console.error(`upstream ${status}: GET ${path}: ${text.slice(0, 500)}`);
+      console.error(`upstream ${status}: ${method} ${path}: ${text.slice(0, 500)}`);
       throw new AppError('UPSTREAM_ERROR');
     }
     return { status, content };

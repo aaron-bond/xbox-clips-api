@@ -1,4 +1,4 @@
-import type { CareerStats, ClipPage, Game, GameClipInfo, XboxUserProfile } from '../src/domain';
+import type { CareerStats, ClipPage, Game, GameClipInfo, Screenshot, XboxUserProfile } from '../src/domain';
 import { AppError } from '../src/errors';
 import type { IXboxDataProvider } from '../src/provider/types';
 
@@ -15,7 +15,8 @@ export class FakeProvider implements IXboxDataProvider {
   failWith: AppError | null = null;
   mostPlayed: Game[] = [];
   careers = new Map<string, CareerStats | null>();
-  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getCareerStats: 0 };
+  screenshots = new Map<string, Screenshot[]>();
+  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getCareerStats: 0, getScreenshots: 0 };
 
   async resolveGamertag(_apiKey: string, gamertag: string): Promise<string | null> {
     this.calls.resolveGamertag++;
@@ -47,6 +48,12 @@ export class FakeProvider implements IXboxDataProvider {
     this.calls.getCareerStats++;
     this.maybeFail();
     return structuredClone(this.careers.get(xuid) ?? null);
+  }
+
+  async getScreenshots(_apiKey: string, productId: string): Promise<Screenshot[]> {
+    this.calls.getScreenshots++;
+    this.maybeFail();
+    return structuredClone(this.screenshots.get(productId) ?? []);
   }
 
   private maybeFail() {

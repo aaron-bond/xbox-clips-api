@@ -4,6 +4,7 @@ import { OpenXblProvider } from '../src/provider/openxbl';
 import { accountResponse, clipsResponse, searchResponse, XUID } from './fixtures/openxbl';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { titlesResponse } from './fixtures/titles';
+import { storeDetailsResponse } from './fixtures/store-details';
 
 function fakeFetch(status: number, body: unknown, headers: Record<string, string> = {}) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -48,6 +49,17 @@ describe('OpenXblProvider', () => {
     const games = await new OpenXblProvider(fetch).getMostPlayedGames('k');
     expect(fetch.mock.calls[0]![0]).toBe('https://api.xbl.io/v2/marketplace/most-played');
     expect(games).toHaveLength(4);
+  });
+
+  it('posts one product id for store screenshots', async () => {
+    const fetch = fakeFetch(200, storeDetailsResponse);
+    const shots = await new OpenXblProvider(fetch).getScreenshots('k', '9N4PT8HGCDHQ');
+    const [url, init] = fetch.mock.calls[0]!;
+    expect(url).toBe('https://api.xbl.io/v2/marketplace/details');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse(String(init?.body))).toEqual({ products: '9N4PT8HGCDHQ' });
+    expect(new Headers(init?.headers).get('Content-Type')).toBe('application/json');
+    expect(shots).toHaveLength(2);
   });
 
   it('fetches title history and keeps only the career facts', async () => {

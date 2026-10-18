@@ -23,6 +23,7 @@ frontend is [xbox-clips-ui](https://github.com/aaron-bond/xbox-clips-ui).
 | `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: facts from the player's last 100 games. Cached a day. |
 | `GET /api/v1/games/most-played` | `{ games }`: the Xbox Store's most-played games, ranked. Cached 6 hours. |
 | `GET /api/v1/games/:productId` | One game from that list. |
+| `GET /api/v1/games/:productId/screenshots` | `{ screenshots }`: that game's store screenshots. Cached 7 days. |
 | `GET /health` | `{ status: "ok" }` |
 
 Every error has the shape

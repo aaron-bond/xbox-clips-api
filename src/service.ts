@@ -1,5 +1,5 @@
 import { Cache } from './cache';
-import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameClipInfo, type XboxUserProfile } from './domain';
+import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameClipInfo, type Screenshot, type XboxUserProfile } from './domain';
 import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
 import type { PlayerIdentifier } from './validation';
@@ -31,6 +31,8 @@ export const POLICY = {
   career: { fresh: 24 * HOUR, retain: 7 * DAY },
   /** The same for every visitor, so one upstream call per window serves all traffic. */
   mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
+  /** Store screenshots barely change; only the parsed list (a few KB) is stored. */
+  screenshots: { fresh: 7 * DAY, retain: 30 * DAY },
   /** Upper bound on upstream pages walked to find one clip, to protect the shared budget. */
   maxPagesPerClipLookup: 5,
 } as const;
@@ -45,6 +47,7 @@ export const keys = {
   mostPlayed: () => 'games:most-played',
   // v2: facts from the most recent 100 games, without platforms.
   career: (xuid: string) => `career:v2:${xuid}`,
+  screenshots: (productId: string) => `screenshots:${productId}`,
 };
 
 export interface PlayerClips {
@@ -146,6 +149,20 @@ export class ClipService {
     const game = (await this.getMostPlayed()).find((g) => g.productId === productId);
     if (!game) throw new AppError('GAME_NOT_FOUND');
     return game;
+  }
+
+  /**
+   * Store screenshots for a game on the most-played ranking. Other products are
+   * refused before any upstream call, so arbitrary ids can't spend the budget.
+   */
+  async getScreenshots(productId: string): Promise<Screenshot[]> {
+    await this.getGame(productId);
+    const shots = await this.cache.readThrough(keys.screenshots(productId), async () => {
+      const fetched = await this.provider.getScreenshots(this.apiKey, productId);
+      const now = this.now();
+      return { value: fetched, freshUntil: now + POLICY.screenshots.fresh, retainUntil: now + POLICY.screenshots.retain };
+    });
+    return shots!;
   }
 
   private async firstPage(xuid: string): Promise<ClipPage> {

@@ -325,6 +325,33 @@ describe('games', () => {
     expect(await errorCode(bad)).toBe('INVALID_IDENTIFIER');
   });
 
+  it('serves screenshots for a ranked game from one cached upstream call', async () => {
+    const { get, provider } = setup();
+    provider.mostPlayed = [game(1, '9N4PT8HGCDHQ')];
+    provider.screenshots.set('9N4PT8HGCDHQ', [{ url: 'https://img.test/1', caption: 'A shot', width: 3840, height: 2160 }]);
+    const res = await get('/api/v1/games/9n4pt8hgcdhq/screenshots');
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { screenshots: unknown[] }).screenshots).toHaveLength(1);
+    await get('/api/v1/games/9N4PT8HGCDHQ/screenshots');
+    expect(provider.calls.getScreenshots).toBe(1);
+  });
+
+  it('refuses screenshots for a game not in the ranking, without an upstream call', async () => {
+    const { get, provider } = setup();
+    provider.mostPlayed = [game(1, '9N4PT8HGCDHQ')];
+    const res = await get('/api/v1/games/9NBLGGH512WG/screenshots');
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe('GAME_NOT_FOUND');
+    expect(provider.calls.getScreenshots).toBe(0);
+  });
+
+  it('answers an empty list for a game without screenshots', async () => {
+    const { get, provider } = setup();
+    provider.mostPlayed = [game(1, '9N4PT8HGCDHQ')];
+    const res = await get('/api/v1/games/9N4PT8HGCDHQ/screenshots');
+    expect(await res.json()).toEqual({ screenshots: [] });
+  });
+
   it('serves a stale list when upstream is rate-limited', async () => {
     const { get, provider, advance } = setup();
     provider.mostPlayed = [game(1, '9N4PT8HGCDHQ')];
