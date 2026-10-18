@@ -13,13 +13,6 @@ any trade-off made.
       restricted capture privacy and record what comes back. The provider
       currently treats `403` and `404` as `restricted`, and an empty `200` as
       public with no clips (`TODO(O3)` in `src/provider/openxbl.ts`).
-- [ ] **Early URL death.** One of two measured media URLs died at least 3
-      minutes before its `expiration`; the other died at its stamp (PLAN §7,
-      O1). The UI must retry the clip route once on a playback error. Widen
-      `POLICY.clips.expiryMargin` if early deaths turn out to be common.
-- [ ] **Thumbnail as `og:image`.** Thumbnails are served as
-      `application/octet-stream`. Paste a deployed clip link into Discord
-      and a messaging app and check the preview image renders.
 
 ## Later
 
@@ -32,6 +25,15 @@ any trade-off made.
       under 20).
 
 ## Done
+
+- [x] **Early URL death: closed until someone reports it** (2026-10-18). One
+      of two measured media URLs died at least 3 minutes before its
+      `expiration` (PLAN §7, O1). The UI retries the clip route once on a
+      playback error. If reports come in, widen `POLICY.clips.expiryMargin`.
+
+- [x] **Thumbnail as `og:image` confirmed** (2026-10-18). Despite being served
+      as `application/octet-stream`, clip thumbnails render in link
+      previews.
 
 - [x] **Uncompressed title history tried and reverted** (2026-10-17). Asking
       upstream for `Accept-Encoding: identity` was honoured but raised career

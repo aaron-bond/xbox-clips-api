@@ -687,19 +687,27 @@ working backlog; `CLAUDE.md` is the map of the code.
 
 ### Open
 
-- **Early URL death (O1).** One of two measured URLs stopped working at
-  least 3 minutes before its `expiration`, cause unknown. The UI's
-  retry-on-playback-error covers it. If it proves common, widen the
-  freshness margin in `POLICY.clips.expiryMargin`.
 - **Restricted-privacy response (O3). Deferred** (2026-10-17): not
   being tested proactively. The provider's best-guess mapping stays in
   place (`TODO(O3)` in code), and this is revisited if a user reports a
   player whose clips show wrongly.
-- **Thumbnail content type.** Thumbnails are served as
-  `application/octet-stream`. Whether chat-app crawlers accept that as an
-  `og:image` is untested; check once deployed.
+
+### Closed
+
+- **Early URL death (O1). Closed until someone reports it** (2026-10-18).
+  One of two measured URLs stopped working at least 3 minutes before its
+  `expiration`, cause unknown. The UI's retry-on-playback-error covers it.
+  If reports come in, widen the freshness margin in
+  `POLICY.clips.expiryMargin`.
+- **Thumbnail content type. Confirmed** (2026-10-18). Thumbnails are
+  served as `application/octet-stream`, and still render as `og:image` in
+  link previews.
 
 ### Next steps, in order
 
-1. Revisit O3 only if a user reports a privacy-related problem.
-2. Start xbox-clips-ui against this API.
+1. Routes for a player's achievements in a game, then for comparing two
+   players, as the UI's achievement view needs them. Title history per
+   player is already fetched for career stats; per-game achievements come
+   from `GET /v2/achievements/player/{xuid}/{titleId}`, to be checked
+   against the live spec and one real response first.
+2. Revisit O3 only if a user reports a privacy-related problem.
