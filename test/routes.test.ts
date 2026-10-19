@@ -200,6 +200,22 @@ describe('clips', () => {
     expect(body.clips[0]!.thumbnailUrl).toBeTruthy();
   });
 
+  it('keeps serving the last good list when upstream briefly fails, instead of caching the failure', async () => {
+    const { get, provider, advance } = setup();
+    withClips(provider, page(clips));
+    await get(`/api/v1/players/${XUID}/clips`);
+    advance(16 * 60 * 1000); // stale, URLs still valid until 13:00
+
+    provider.failWith = new AppError('UPSTREAM_ERROR'); // what a stray 403 or 404 now becomes
+    const during = (await (await get(`/api/v1/players/${XUID}/clips`)).json()) as { access: string; clips: unknown[] };
+    expect(during).toMatchObject({ access: 'public' });
+    expect(during.clips).toHaveLength(clips.length);
+
+    provider.failWith = null;
+    await get(`/api/v1/players/${XUID}/clips`);
+    expect(provider.calls.getClips).toBe(3); // the failure wasn't cached: the next request asks again
+  });
+
   it('reports restricted access distinctly from an empty list', async () => {
     const { get, provider } = setup();
     provider.clipPages.set(XUID, [{ clips: [], continuationToken: null, access: 'restricted' }]);

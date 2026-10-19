@@ -54,9 +54,13 @@ export class OpenXblProvider implements IXboxDataProvider {
     const res = await this.get(apiKey, `/dvr/gameclips/${xuid}${query}`);
     // A player whose clips are private returns an empty 200, indistinguishable from
     // one with no clips (O3, PLAN-v1.md §10), so it is reported as public and empty.
-    // A 403 or 404 is still treated as restricted, defensively.
+    // A 403 or 404 is therefore not privacy: upstream returns them intermittently
+    // for players whose clips are public (seen 2026-10-19, a 200 again within two
+    // minutes). They are treated as a transient failure, so they are never cached
+    // and a stale list is served instead (PLAN-v1.md §6).
     if (res.status === 403 || res.status === 404) {
-      return { clips: [], continuationToken: null, access: 'restricted' };
+      console.warn(`upstream gameclips returned ${res.status} for ${xuid}: ${JSON.stringify(res.content)?.slice(0, 300)}`);
+      throw new AppError('UPSTREAM_ERROR');
     }
     this.expectOk(res, 'gameclips');
     return toClipPage(res.content as RawClipList);

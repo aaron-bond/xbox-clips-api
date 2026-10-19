@@ -22,11 +22,17 @@ any trade-off made.
 
 ## Done
 
+- [x] **Stray 403/404 on clips no longer cached as "private"** (2026-10-19).
+      Upstream intermittently answered a public player's clips with a 403 or
+      404; the API stored that as restricted for 15 minutes, so the player
+      page said their clips weren't public. Now a transient upstream error:
+      not cached, the last good list served, the response logged.
+
+
 - [x] **O3: restricted privacy answered** (2026-10-18). A player with private
       clips returns an empty `200`, the same as a player with no clips, so
       the API reports public and empty. Confirmed from the cache entry of a
-      real player reported to have private clips. The `403`/`404` →
-      `restricted` mapping stays, defensively.
+      real player reported to have private clips.
 
 
 - [x] **Early URL death: closed until someone reports it** (2026-10-18). One

@@ -558,9 +558,15 @@ restrict who sees their captures, so a perfectly valid XUID may return an
 empty list. **Upstream does not say which** (O3, answered 2026-10-18): a
 player whose clips are private comes back as an ordinary empty `200`,
 exactly like a player with no clips, so the API reports both as
-`access: "public"` with no clips. The `restricted` value is kept for a
-`403` or `404` from the clips endpoint, which privacy has not been seen to
-produce. A non-owner key does receive a public player's clips.
+`access: "public"` with no clips. A non-owner key does receive a public
+player's clips. **A `403` or `404` from the clips endpoint is a transient
+failure, not privacy:** upstream returned one for a player with public
+clips on 2026-10-19 and a full `200` two minutes later. Mapping it to
+`restricted`, as the API first did, cached a false "clips aren't public"
+for 15 minutes. It is now an `UPSTREAM_ERROR`: never cached, the last good
+list is served if there is one, and the status and body are logged. The
+`restricted` value remains in the response type but is no longer
+produced.
 
 **Deleted clips get their own code.** `410 CLIP_EXPIRED` tells the UI
 the clip existed and has aged out on Xbox, so a share link can say that
@@ -641,8 +647,8 @@ curl -sI '<media url>'
   any trade-off made, since the note is more useful later than the tick.
 
 Restricted privacy (O3) is answered: a private reel arrives as an empty
-`200` and is reported as public with no clips. The provider still treats
-a `403` or `404` from the clips endpoint as `restricted`, defensively.
+`200` and is reported as public with no clips. A `403` or `404` from the
+clips endpoint is treated as a transient upstream error (§3).
 
 ---
 

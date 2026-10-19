@@ -188,9 +188,9 @@ describe('OpenXblProvider', () => {
     expect(await new OpenXblProvider(fakeFetch(404, '')).getProfile('k', XUID)).toBeNull();
   });
 
-  // TODO(O3): confirm which response a privacy-restricted player actually produces.
-  it.each([403, 404])('treats a %i on clips as restricted access', async (status) => {
-    const page = await new OpenXblProvider(fakeFetch(status, '')).getClips('k', XUID);
-    expect(page).toEqual({ clips: [], continuationToken: null, access: 'restricted' });
+  // Private reels arrive as an empty 200 (O3); a 403 or 404 on clips is an
+  // intermittent upstream failure, never cached as a fact about the player.
+  it.each([403, 404])('treats a %i on clips as a transient upstream error', async (status) => {
+    await expectAppError(new OpenXblProvider(fakeFetch(status, '')).getClips('k', XUID), 'UPSTREAM_ERROR');
   });
 });
