@@ -216,6 +216,18 @@ describe('clips', () => {
     expect(provider.calls.getClips).toBe(3); // the failure wasn't cached: the next request asks again
   });
 
+  it('rechecks "not public" after 5 minutes rather than 15', async () => {
+    const { get, provider, advance } = setup();
+    provider.clipPages.set(XUID, [{ clips: [], continuationToken: null, access: 'restricted' }]);
+    await get(`/api/v1/players/${XUID}/clips`);
+    advance(4 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/clips`);
+    expect(provider.calls.getClips).toBe(1);
+    advance(2 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/clips`);
+    expect(provider.calls.getClips).toBe(2);
+  });
+
   it('reports restricted access distinctly from an empty list', async () => {
     const { get, provider } = setup();
     provider.clipPages.set(XUID, [{ clips: [], continuationToken: null, access: 'restricted' }]);

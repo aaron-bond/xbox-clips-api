@@ -555,18 +555,18 @@ One response shape for every failure:
 
 **DVR privacy is a first-class state, not an error.** A player can
 restrict who sees their captures, so a perfectly valid XUID may return an
-empty list. **Upstream does not say which** (O3, answered 2026-10-18): a
-player whose clips are private comes back as an ordinary empty `200`,
-exactly like a player with no clips, so the API reports both as
-`access: "public"` with no clips. A non-owner key does receive a public
-player's clips. **A `403` or `404` from the clips endpoint is a transient
-failure, not privacy:** upstream returned one for a player with public
-clips on 2026-10-19 and a full `200` two minutes later. Mapping it to
-`restricted`, as the API first did, cached a false "clips aren't public"
-for 15 minutes. It is now an `UPSTREAM_ERROR`: never cached, the last good
-list is served if there is one, and the status and body are logged. The
-`restricted` value remains in the response type but is no longer
-produced.
+empty list. **Upstream does say which** (O3, settled 2026-10-20). A
+player with nothing to show returns an ordinary empty `200`. A player whose
+clips aren't public returns Xbox's own error inside OpenXBL's envelope:
+HTTP `200`, inner `code: 403`, and `content: { errorMessage: "GameMedia
+Error Code", HttpStatusCode: 403, errorCode: 10209 }`. The API reports that
+as `access: "restricted"`, rechecked after 5 minutes rather than 15 in case
+upstream sends it in error. Any other `403` or `404` from the clips
+endpoint is a transient failure: upstream returned one for a player with
+public clips on 2026-10-19 and a full `200` two minutes later. It is an
+`UPSTREAM_ERROR`, never cached; the last good list is served if there is
+one, and the status and body are logged. A non-owner key does receive a
+public player's clips.
 
 **Deleted clips get their own code.** `410 CLIP_EXPIRED` tells the UI
 the clip existed and has aged out on Xbox, so a share link can say that
@@ -612,12 +612,13 @@ curl -sI '<media url>'
 - **O2 — Clip field names: answered.** See "Clip payload" in §2. The
   shape is Microsoft's GameClip object with integer enums, inside the
   OpenXBL `{ content, code }` envelope. The transformer can be written.
-- **O3 — Privacy-restricted players: answered** (2026-10-18). A key that
+- **O3 — Privacy-restricted players: answered** (2026-10-20). A key that
   does not belong to the player receives their public clips. A player
-  whose clips are private returns an empty `200`, indistinguishable from
-  a player with no clips: confirmed with a real player reported to have
-  private clips, whose cached list was public and empty. So privacy can't
-  be detected, and the UI's empty-reel message has to cover both cases.
+  whose clips aren't public returns an inner `403` carrying Xbox's
+  GameMedia error `10209` (§3); one with nothing to show returns an empty
+  `200`. A first reading (2026-10-18) took an empty `200` for privacy,
+  from a player reported to have private clips; the 10209 response,
+  seen directly on 2026-10-20, is the definitive sign.
 
 ---
 
@@ -646,9 +647,9 @@ curl -sI '<media url>'
   where finished items keep a short note on what was actually built and
   any trade-off made, since the note is more useful later than the tick.
 
-Restricted privacy (O3) is answered: a private reel arrives as an empty
-`200` and is reported as public with no clips. A `403` or `404` from the
-clips endpoint is treated as a transient upstream error (§3).
+Restricted privacy (O3) is answered: an inner `403` with Xbox's GameMedia
+error `10209` is `restricted`; any other `403` or `404` from the clips
+endpoint is a transient upstream error (§3).
 
 ---
 
@@ -713,8 +714,8 @@ None.
 
 ### Closed
 
-- **Restricted-privacy response (O3). Answered** (2026-10-18): a private
-  reel is an empty `200`, indistinguishable from an empty one (§10).
+- **Restricted-privacy response (O3). Answered** (2026-10-20): an inner
+  `403` with GameMedia error `10209` (§3, §10).
 - **Early URL death (O1). Closed until someone reports it** (2026-10-18).
   One of two measured URLs stopped working at least 3 minutes before its
   `expiration`, cause unknown. The UI's retry-on-playback-error covers it.

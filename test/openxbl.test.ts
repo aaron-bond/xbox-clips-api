@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppError } from '../src/errors';
 import { OpenXblProvider } from '../src/provider/openxbl';
-import { accountResponse, clipsResponse, searchResponse, XUID } from './fixtures/openxbl';
+import { accountResponse, clipsResponse, privateClipsResponse, searchResponse, XUID } from './fixtures/openxbl';
 import { mostPlayedResponse } from './fixtures/most-played';
 import { titlesResponse } from './fixtures/titles';
 import { storeDetailsResponse } from './fixtures/store-details';
@@ -188,9 +188,18 @@ describe('OpenXblProvider', () => {
     expect(await new OpenXblProvider(fakeFetch(404, '')).getProfile('k', XUID)).toBeNull();
   });
 
-  // Private reels arrive as an empty 200 (O3); a 403 or 404 on clips is an
-  // intermittent upstream failure, never cached as a fact about the player.
-  it.each([403, 404])('treats a %i on clips as a transient upstream error', async (status) => {
+  it("reports clips as restricted when Xbox says they aren't public (GameMedia error 10209)", async () => {
+    const page = await new OpenXblProvider(fakeFetch(200, privateClipsResponse)).getClips('k', XUID);
+    expect(page).toEqual({ clips: [], continuationToken: null, access: 'restricted' });
+  });
+
+  // Any other 403 or 404 on clips has been an intermittent upstream failure, never
+  // to be cached as a fact about the player.
+  it.each([403, 404])('treats any other %i on clips as a transient upstream error', async (status) => {
     await expectAppError(new OpenXblProvider(fakeFetch(status, '')).getClips('k', XUID), 'UPSTREAM_ERROR');
+    await expectAppError(
+      new OpenXblProvider(fakeFetch(200, { content: { errorCode: 1, HttpStatusCode: status }, code: status })).getClips('k', XUID),
+      'UPSTREAM_ERROR',
+    );
   });
 });

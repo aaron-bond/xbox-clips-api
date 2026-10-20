@@ -23,6 +23,8 @@ export const POLICY = {
     fresh: 15 * MINUTE,
     /** ...or sooner: never fresh past this long before the earliest media URL expires. */
     expiryMargin: 5 * MINUTE,
+    /** "Not public" is rechecked sooner, in case upstream sent it in error. */
+    restrictedFresh: 5 * MINUTE,
     retain: 6 * HOUR,
   },
   /** Metadata is kept past deletion so an expired share link can answer 410, not 404. */
@@ -259,6 +261,7 @@ export class ClipService {
 
   /** Fresh until shortly before the earliest URL expires, so no cached URL is served dead. */
   private clipsFreshUntil(page: ClipPage): number {
+    if (page.access === 'restricted') return this.now() + POLICY.clips.restrictedFresh;
     const expiries = page.clips.flatMap((c) => (c.media ? [Date.parse(c.media.expiresAt)] : []));
     const window = this.now() + POLICY.clips.fresh;
     if (expiries.length === 0) return window;

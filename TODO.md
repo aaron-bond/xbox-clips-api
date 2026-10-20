@@ -22,6 +22,13 @@ any trade-off made.
 
 ## Done
 
+- [x] **Private clips told apart from failures** (2026-10-20). A player whose
+      clips aren't public returns an inner 403 with Xbox's GameMedia error
+      10209: reported as restricted ("clips aren't public"), rechecked after 5
+      minutes. Other 403/404s stay transient errors. Yesterday's fix had
+      turned the private case into an error page.
+
+
 - [x] **Stray 403/404 on clips no longer cached as "private"** (2026-10-19).
       Upstream intermittently answered a public player's clips with a 403 or
       404; the API stored that as restricted for 15 minutes, so the player

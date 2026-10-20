@@ -113,3 +113,13 @@ export const clipsResponse = {
   content: { gameClips: [rawClip], pagingInfo: { continuationToken: null } },
   code: 200,
 };
+
+/**
+ * A real GET /v2/dvr/gameclips/{xuid} response (2026-10-20) for a player whose
+ * clips aren't public: HTTP 200 from OpenXBL, carrying Xbox's GameMedia error
+ * 10209 with an inner 403.
+ */
+export const privateClipsResponse = {
+  content: { errorMessage: 'GameMedia Error Code', HttpStatusCode: 403, errorCode: 10209 },
+  code: 403,
+};

@@ -24,6 +24,12 @@ import type { IXboxDataProvider } from './types';
 
 const BASE_URL = 'https://api.xbl.io/v2';
 
+/** Xbox's GameMedia error for a player whose captures aren't visible to us. */
+const GAMEMEDIA_PRIVATE = 10209;
+
+const isClipsPrivate = (content: unknown) =>
+  !!content && typeof content === 'object' && (content as { errorCode?: unknown }).errorCode === GAMEMEDIA_PRIVATE;
+
 /** Below this many remaining requests in the hourly plan budget, every call logs a warning. */
 const LOW_BUDGET_WARNING = 20;
 
@@ -52,12 +58,14 @@ export class OpenXblProvider implements IXboxDataProvider {
   async getClips(apiKey: string, xuid: string, continuationToken?: string): Promise<ClipPage> {
     const query = continuationToken ? `?continuationToken=${encodeURIComponent(continuationToken)}` : '';
     const res = await this.get(apiKey, `/dvr/gameclips/${xuid}${query}`);
-    // A player whose clips are private returns an empty 200, indistinguishable from
-    // one with no clips (O3, PLAN-v1.md §10), so it is reported as public and empty.
-    // A 403 or 404 is therefore not privacy: upstream returns them intermittently
-    // for players whose clips are public (seen 2026-10-19, a 200 again within two
-    // minutes). They are treated as a transient failure, so they are never cached
-    // and a stale list is served instead (PLAN-v1.md §6).
+    // Privacy has its own answer (O3, PLAN-v1.md §10): an inner 403 whose content is
+    // Xbox's GameMedia error 10209. Any other 403 or 404 has been seen to be
+    // intermittent for players whose clips are public (2026-10-19, a 200 again
+    // within two minutes), so it is a transient failure: never cached, a stale list
+    // served instead (PLAN-v1.md §6).
+    if (res.status === 403 && isClipsPrivate(res.content)) {
+      return { clips: [], continuationToken: null, access: 'restricted' };
+    }
     if (res.status === 403 || res.status === 404) {
       console.warn(`upstream gameclips returned ${res.status} for ${xuid}: ${JSON.stringify(res.content)?.slice(0, 300)}`);
       throw new AppError('UPSTREAM_ERROR');
