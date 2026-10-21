@@ -58,10 +58,14 @@ Base URL: **`https://api.xbl.io/v2`**.
 Two further endpoints exist and are not used in v1:
 `GET /v2/dvr/gameclips` (the key owner's own clips) and
 `GET /v2/dvr/screenshots/{xuid}`. The screenshots endpoint is not worth
-building on: on 2026-10-18 it returned an empty list (`200`, with
-`pagingInfo`) for two players, one of them an account known to have
-screenshots and whose clips are public. A non-null continuation token
-on the first page led only to a second empty page.
+building on: it has returned an empty list (`200`, with `pagingInfo`) for
+every account tried. On 2026-10-18, two players, one of them known to
+have screenshots and whose clips are public; on 2026-10-21, a third
+player, and `GET /v2/dvr/screenshots` for the key owner's own account.
+The first page's continuation token was the same string,
+`abcde_vwxyzZAAAAA2`, for two different players, a placeholder rather
+than real paging, and following it led only to a second empty page.
+Clips for the same players load normally.
 
 **There is no single-clip endpoint and no URL-refresh endpoint.**
 Microsoft's underlying gameclips service documents a refresh API, but
