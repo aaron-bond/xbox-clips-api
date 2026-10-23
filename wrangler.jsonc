@@ -4,6 +4,11 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
 
+  // Workers Logs: keeps console output (upstream failures, unexpected statuses and
+  // their response bodies) for a few days, viewable in the dashboard under the
+  // Worker's Logs tab. Entries can include player XUIDs; they stay in this account.
+  "observability": { "enabled": true },
+
   // Non-secret configuration. XBL_API_KEY is a secret: `wrangler secret put XBL_API_KEY`
   // in production, `.dev.vars` locally. Never add it here - vars are committed in plain text.
   "vars": {

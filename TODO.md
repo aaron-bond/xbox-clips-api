@@ -22,6 +22,11 @@ any trade-off made.
 
 ## Done
 
+- [x] **Workers Logs turned on** (2026-10-23). Unexplained 502s on clips left
+      no trace: the code logged the cause, but nothing kept the logs. Now kept
+      for a few days in the dashboard.
+
+
 - [x] **Private clips told apart from failures** (2026-10-20). A player whose
       clips aren't public returns an inner 403 with Xbox's GameMedia error
       10209: reported as restricted ("clips aren't public"), rechecked after 5

@@ -57,6 +57,14 @@ dev server.
 | `npm run typecheck` | Regenerates runtime types from `wrangler.jsonc`, then runs `tsc`. |
 | `npm run dev` | Local Worker on port 8787. |
 
+## Logs
+
+Workers Logs is on (`observability` in `wrangler.jsonc`): the Worker's console
+output is kept for a few days, under Workers & Pages → `xbox-clips-api` →
+Logs in the Cloudflare dashboard. Upstream failures are logged with their status
+and the start of the response body; they can include player XUIDs. For a live
+view, `npx wrangler tail`.
+
 ## Deployment
 
 Pushes to `main` deploy through GitHub Actions after typecheck and tests
