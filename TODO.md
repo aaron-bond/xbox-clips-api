@@ -12,6 +12,11 @@ any trade-off made.
 
 ## Later
 
+- [ ] **Lock the API to the site, if abuse appears** (PLAN §6, "Locking the
+      API to the site"). Signs: upstream budget running low, rate-limit
+      refusals climbing in Workers Logs. Then: proxy through
+      `xboxclips.io/api/*` with a `Sec-Fetch-Site` check, switch off
+      `workers.dev`, turn on Bot Fight Mode.
 - [ ] Negative-cache unknown gamertags for a short time. Each junk lookup
       currently spends a search call from the shared budget.
 - [ ] Pages after the first are not cached, so repeatedly resolving an old

@@ -582,6 +582,51 @@ Cloudflare's native Rate Limiting binding, per IP, protects the shared
 upstream budget from a single abusive client. Deliberately not
 KV-based: per-request counters would burn the daily write quota (§4).
 
+### Locking the API to the site: deferred until abuse is seen
+
+No public browser app's API can be made to answer only its own front end:
+anything a browser sends, a script can send too. CSRF tokens don't apply
+either, since the API has no logins, cookies or writes. What is worth
+protecting is the shared upstream budget, so the aim is to make scripted
+use costly and visible. Today that rests on the CORS allow-list (which
+stops other sites' pages, not scripts), the per-IP limit above, and the
+cache.
+
+**Decided 2026-10-23: leave it as is unless abuse shows up**, for
+example the upstream budget running low, rate-limit refusals climbing in
+Workers Logs, or one client making unusual numbers of lookups. If it does,
+in this order:
+
+1. **Serve the API through the UI's own domain** (the UI repo's part):
+   a Pages Function at `xboxclips.io/api/*` forwards to this Worker over
+   the existing `API` service binding. The Worker still sees the
+   visitor's IP as `CF-Connecting-IP` over the binding (§10), so the
+   per-IP limit keeps working. That function also checks the browser's
+   `Sec-Fetch-Site` header (`same-origin` or `same-site`, falling back to
+   an allowed `Referer` for older browsers) and refuses anything else
+   with `403`. The UI then calls `/api/...` on its own origin. Verify:
+   the site works, `curl https://xboxclips.io/api/v1/games/most-played`
+   returns `403`, and clip link previews still unfurl.
+2. **Switch off this Worker's public address**: `"workers_dev": false`
+   and `"preview_urls": false` in `wrangler.jsonc`. Only after step 1 is
+   live, or the site breaks. The service binding becomes the only way
+   in; link previews already use it.
+3. **Cloudflare's zone protections** for `xboxclips.io`, which now cover
+   API traffic, in the dashboard: Security → Bots → Bot Fight Mode on
+   (verified crawlers such as Discord's and WhatsApp's link previewers
+   are exempt; re-test a clip link afterwards), and optionally a rate
+   limiting rule on URI path starting `/api/` (per IP, 50 requests per
+   10 seconds, block for 10 seconds).
+4. **If abuse continues:** Cloudflare Turnstile (an invisible check that
+   a real browser is present, rewarded with a short-lived signed cookie
+   the API requires), and lower per-IP limits on the expensive routes
+   (`/career`, `/achievements`).
+
+Costs once in place: each API call is also a Pages Function request
+(both count toward the free 100,000 Worker requests a day), one extra hop
+inside Cloudflare, and visitors whose browsers send neither
+`Sec-Fetch-Site` nor `Referer` are refused.
+
 ---
 
 ## 7. Findings and open questions
