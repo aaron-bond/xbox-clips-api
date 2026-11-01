@@ -551,8 +551,12 @@ It is the only read that parses the full title history, and so the most
 expensive: a separate route, run only when a visitor presses the button, so
 `/career` and `/games` keep stopping at 100 games. It is deliberately not cached
 in KV, since little traffic is expected: each request is one upstream call and
-up to about 30 seconds. The browser reuses a result for 5 minutes. If it is ever
-used more, a short KV entry is the fix.
+up to about 30 seconds. Measured live on 2026-11-01 for two players at the
+1,000-title limit: 11 and 17 seconds, 10 and 14 ms of CPU, against the free
+plan's 10 ms. Both succeeded, and parsing is already native, so a scan written in
+JavaScript would not beat it. Exceeding the limit would fail only this route. The
+browser reuses a result for 5 minutes. If it is ever used more, a short KV entry
+is the fix.
 
 ### Most-played games
 
