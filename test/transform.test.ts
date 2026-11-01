@@ -248,6 +248,11 @@ describe('toPlayerGames (real payload, trimmed)', () => {
     expect(games.find((g) => g.name === 'Halo 4')).toMatchObject({ xbox360: true, unlocked: 59 });
   });
 
+  it("moves older games' art to the host that serves https", () => {
+    const [game] = toPlayerGames([{ name: 'Old', displayImage: 'http://images-eds.xboxlive.com/image?url=abc' }]);
+    expect(game!.imageUrl).toBe('https://images-eds-ssl.xboxlive.com/image?url=abc');
+  });
+
   it('flags Mythic games, and reads a missing flag as not Mythic', () => {
     expect(games.filter((g) => g.mythic).length).toBeGreaterThan(0);
     expect(games[0]!.mythic).toBe(false);

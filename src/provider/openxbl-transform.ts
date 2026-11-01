@@ -336,13 +336,19 @@ export function mythicsFromTail(tail: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/**
+ * Image URLs arrive as http://, and the store's host serves https too. Older
+ * games use images-eds.xboxlive.com, whose certificate fails over https; its
+ * -ssl twin serves the same images.
+ */
+const secureImage = (url: string) => url.replace(/^http:/, 'https:').replace('//images-eds.xboxlive.com/', '//images-eds-ssl.xboxlive.com/');
+
 function toCareerGame(t: RawTitle): CareerGame {
   const a = t.achievement ?? {};
   return {
     titleId: t.titleId ?? '',
     name: t.name ?? '',
-    // Image URLs arrive as http://; the same host serves https.
-    imageUrl: t.displayImage ? t.displayImage.replace(/^http:/, 'https:') : null,
+    imageUrl: t.displayImage ? secureImage(t.displayImage) : null,
     gamerscore: a.currentGamerscore ?? 0,
     totalGamerscore: a.totalGamerscore ?? 0,
     percent: a.progressPercentage ?? 0,
