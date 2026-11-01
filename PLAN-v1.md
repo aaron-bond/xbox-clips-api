@@ -365,8 +365,9 @@ Base path `/api/v1`.
 | `GET /api/v1/clips/:xuid/:clipId` | One clip, with a media URL valid for playback. Powers the UI's clip page. |
 | `GET /api/v1/clips/:xuid/:clipId/preview` | Clip metadata only, never a media URL. Backs the UI's link previews. Served from cached metadata. |
 | `GET /api/v1/players/:identifier/career` | `{ xuid, stats }`: facts from the player's last 100 games (now playing, biggest haul, nearest to 100%). `stats` is null when the history is hidden. |
-| `GET /api/v1/players/:identifier/games` | `{ xuid, games, limited }`: the player's recent games (at most 100, newest first) with gamerscore progress, unlocked count and an `xbox360` flag. From the same cached read as `/career`, so it costs no extra upstream call. Empty when the history is hidden. |
+| `GET /api/v1/players/:identifier/games` | `{ xuid, games, limited }`: the player's recent games (at most 100, newest first) with gamerscore progress, unlocked count and `xbox360` and `mythic` flags. From the same cached read as `/career`, so it costs no extra upstream call. Empty when the history is hidden. |
 | `GET /api/v1/players/:identifier/achievements/:titleId` | `{ xuid, titleId, game, titleName, lockedListed, minutesPlayed, achievements }`: the player's achievements in one game, and minutes played (null when Xbox reports none). Xbox 360 games (known from the recent games) use the 360 endpoint and set `lockedListed: false`. Hidden achievements of a recent game come back as an empty list; a title with none that isn't among the recent games is `404 NOT_FOUND`. A malformed title ID is `400 INVALID_IDENTIFIER`. |
+| `GET /api/v1/players/:identifier/mythics` | `{ xuid, mythics }`: the player's Mythic total, null when the history is hidden. A separate full read of the title history, cached a day (§5). |
 | `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
 | `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
 | `GET /api/v1/games/:productId/screenshots` | `{ screenshots }`: the game's store screenshots (`url`, `caption` or null, `width`, `height`), in store order, at most 30. Only for games in the most-played list: any other id is `404 GAME_NOT_FOUND` before any upstream call, so arbitrary ids can't spend the budget. |
@@ -380,6 +381,7 @@ Base path `/api/v1`.
 | `profile:v2:{xuid}` | `XboxUserProfile` | Fresh 2 hours, kept 48 hours | Short enough that gamerscore keeps up with achievements (fresh 15 minutes). Microsoft throttles profile calls more than any other (repeated 429s seen in production); the long retention lets a throttled refresh serve the stale copy. With no copy at all the profile route fails, but the clips route does not depend on it: it needs only the XUID mapping, so a client can still show the player's clips. |
 | `clips:{xuid}` | **full** `GameClipInfo[]`, with media URLs | Fresh 15 minutes, or until the earliest `expiration` in the list minus 5 minutes if that is sooner. Kept in KV for 6 hours. | A new clip shows within 15 minutes of reaching Xbox. Whole list stored, sliced per request. The extra retention exists only for stale serving, with expired URLs removed (§3). |
 | `career:v3:{xuid}` | `{ history }`: the career facts and the recent games | Fresh 2 hours, kept 7 days | A game just played reaches the recent games and career facts within 2 hours; each refresh is the title-history read below, which carries the accepted CPU risk (§5). One read of the title history (stopped at 100 games, §5) serves `/career`, `/games` and the Xbox 360 lookup for achievements. Only the derived facts and a trimmed games list are stored, about 20 KB, not the up to 1 MB source. A hidden history is cached as null too. v2 held the facts only. |
+| `mythics:{xuid}` | `{ mythics }`: the player's Mythic total | Fresh 24 hours, kept 30 days | Reading it takes the whole title history, so once a day. A hidden history is cached as null too. |
 | `achievements:{xuid}:{titleId}` | `{ titleName, achievements }` | Fresh 15 minutes, kept 7 days | A new unlock shows within 15 minutes. About 20 KB for 49 achievements. Hidden achievements are cached as null. |
 | `playtime:{xuid}:{titleId}` | `{ minutes }` | Fresh 15 minutes, kept 7 days | Minutes played, from `POST /v2/player/stats`. Null when Xbox reports none (Xbox 360 games). A failure to fetch it never fails the achievements response. |
 | `games:most-played` | `Game[]` | Fresh 6 hours, kept 7 days | The same for every visitor, so one upstream call per window serves all traffic: at most 4 a day. |
@@ -491,7 +493,7 @@ Other sources were sampled and rejected: per-achievement records (unordered,
 tens of thousands for a heavy player, no rarity) and player stats (no
 playtime value).
 
-### Mythics (planned, not built)
+### Mythics
 
 A game is **Mythic** once a player has earned all its achievements. It stays
 Mythic if more are added later, so a Mythic can sit below 100%: *A Fold
@@ -509,30 +511,26 @@ The total has no cheaper source: `/titles` takes no filters, it ignores an HTTP
 `Range` header, and neither `/v2/player/summary/{xuid}` nor
 `/v3/achievements/player/{xuid}?maxItems=1` carries it.
 
-To build, API first:
+Built, API first:
 
-1. **Recent games:** add `mythic: boolean` to `PlayerGame`, from
-   `achievement.isMythic`. It comes with the 100 games already read, so it
-   costs nothing. No cache key change: entries refresh within 2 hours, and a
-   missing field reads as not Mythic.
-2. **The count:** `GET /api/v1/players/:identifier/mythics` returns
-   `{ xuid, mythics }`, null when the history is hidden. A new provider method
-   reads the title history to its end, keeping only the tail of the text and
-   taking `mythicsUnlocked` from it with a match, so the titles are never
-   parsed. It stays apart from the 100-game read, so `/career` and `/games`
-   keep stopping early.
-3. **Cache:** `mythics:{xuid}`, `{ mythics }`, fresh 24 hours, kept 30 days. A
-   new Mythic reaches a game's tile within 2 hours, so a longer window would
-   let the total visibly lag its own page. A failed refresh serves the older
-   count.
-4. **Measure, then ship:** reading a heavy player's whole body took 13-14 ms of
-   CPU against the free plan's 10 ms (see Career facts), so check `cpuTime` for
-   a 1,000-game player with `wrangler tail`. Exceeding it fails only this
-   route: the UI leaves the count out. Requests are only made when someone
-   opens the player's achievements page, never from the player page.
-5. **Tests:** the flag and the count from a trimmed real payload (the fixture
-   must keep `achievementSummary`), a stream split across chunks, a hidden
-   history, one upstream call per day per player.
+- **Recent games:** `PlayerGame.mythic`, from `achievement.isMythic`. It comes
+  with the 100 games already read, so it costs nothing. The cache key did not
+  change: entries refresh within 2 hours, and a missing field reads as not
+  Mythic.
+- **The count:** `GET /api/v1/players/:identifier/mythics` returns
+  `{ xuid, mythics }`, null when the history is hidden. `getMythics` reads the
+  title history to its end, keeping only the last 512 bytes, undecoded, and
+  taking `mythicsUnlocked` from them with a match. The titles are never decoded
+  or parsed. It stays apart from the 100-game read, so `/career` and `/games`
+  keep stopping early.
+- **Cache:** `mythics:{xuid}`, `{ mythics }`, fresh 24 hours, kept 30 days. A
+  new Mythic reaches a game's tile within 2 hours, so a longer window would let
+  the total visibly lag its own page. A failed refresh serves the older count.
+- **CPU:** reading a heavy player's whole body once took 13-14 ms against the
+  free plan's 10 ms (see Career facts), most of it decoding and parsing, which
+  this read skips. Exceeding the limit would fail only this route: the UI leaves
+  the count out. It is requested only from the player's achievements page,
+  never the player page.
 
 ### Most-played games
 

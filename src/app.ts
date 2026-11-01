@@ -62,6 +62,12 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
     return c.json(await service(c).getGames(id));
   });
 
+  // The player's Mythic total: a full read of the title history, one per player per day.
+  app.get('/api/v1/players/:identifier/mythics', async (c) => {
+    const id = parsePlayerIdentifier(c.req.param('identifier'));
+    return c.json(await service(c).getMythics(id));
+  });
+
   // A player's achievements in one game: one upstream call per player and game per hour.
   app.get('/api/v1/players/:identifier/achievements/:titleId', async (c) => {
     const id = parsePlayerIdentifier(c.req.param('identifier'));

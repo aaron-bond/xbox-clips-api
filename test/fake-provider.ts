@@ -15,10 +15,11 @@ export class FakeProvider implements IXboxDataProvider {
   failWith: AppError | null = null;
   mostPlayed: Game[] = [];
   histories = new Map<string, TitleHistory | null>();
+  mythics = new Map<string, number | null>();
   /** Keyed `${xuid}:${titleId}`. */
   achievements = new Map<string, { titleName: string | null; achievements: Achievement[] } | null>();
   screenshots = new Map<string, Screenshot[]>();
-  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getAchievements: 0, getMinutesPlayed: 0, getScreenshots: 0 };
+  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getMythics: 0, getAchievements: 0, getMinutesPlayed: 0, getScreenshots: 0 };
   /** The xbox360 flag of each getAchievements call, in order. */
   achievementsAsked: boolean[] = [];
   /** Keyed `${xuid}:${titleId}`. */
@@ -56,6 +57,12 @@ export class FakeProvider implements IXboxDataProvider {
     this.calls.getTitleHistory++;
     this.maybeFail();
     return structuredClone(this.histories.get(xuid) ?? null);
+  }
+
+  async getMythics(_apiKey: string, xuid: string): Promise<number | null> {
+    this.calls.getMythics++;
+    this.maybeFail();
+    return this.mythics.get(xuid) ?? null;
   }
 
   async getAchievements(_apiKey: string, xuid: string, titleId: string, xbox360: boolean) {

@@ -211,7 +211,7 @@ export interface RawTitle {
   displayImage?: string;
   /** e.g. ["XboxSeries"], ["XboxOne", "XboxSeries"], ["Xbox360"], ["PC"]. */
   devices?: string[];
-  achievement?: { currentAchievements?: number; currentGamerscore?: number; totalGamerscore?: number; progressPercentage?: number };
+  achievement?: { currentAchievements?: number; currentGamerscore?: number; totalGamerscore?: number; progressPercentage?: number; isMythic?: boolean };
   titleHistory?: { lastTimePlayed?: string };
 }
 
@@ -326,6 +326,16 @@ export function firstTitles(raw: string, limit: number): { titles: RawTitle[]; m
   return scanner.result();
 }
 
+/**
+ * The player's Mythic total, from the end of a title-history response.
+ * `content.achievementSummary` follows the titles, and counts Mythics beyond the
+ * 1,000 titles listed. Null when the text doesn't carry it.
+ */
+export function mythicsFromTail(tail: string): number | null {
+  const match = /"mythicsUnlocked"\s*:\s*(\d+)/.exec(tail);
+  return match ? Number(match[1]) : null;
+}
+
 function toCareerGame(t: RawTitle): CareerGame {
   const a = t.achievement ?? {};
   return {
@@ -366,6 +376,7 @@ export function toPlayerGames(titles: RawTitle[]): PlayerGame[] {
     ...toCareerGame(t),
     unlocked: t.achievement?.currentAchievements ?? 0,
     xbox360: (t.devices ?? []).includes('Xbox360'),
+    mythic: t.achievement?.isMythic === true,
   }));
 }
 

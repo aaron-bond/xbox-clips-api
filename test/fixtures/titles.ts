@@ -3,6 +3,7 @@
  * games that drive the career facts (most recent, biggest haul, nearest to
  * 100%), a completed game, and games from Xbox 360 and PC. The player id is
  * replaced; unused fields are removed. The real response held 1,000 titles.
+ * `isMythic` was added afterwards, in the place a 2026-11-01 response has it.
  */
 export const titlesResponse = {
   "content": {
@@ -21,7 +22,8 @@ export const titlesResponse = {
           "totalAchievements": 0,
           "currentGamerscore": 330,
           "totalGamerscore": 1000,
-          "progressPercentage": 33
+          "progressPercentage": 33,
+          "isMythic": false
         },
         "titleHistory": {
           "lastTimePlayed": "2026-10-11T21:24:46.7340979Z",
@@ -42,7 +44,8 @@ export const titlesResponse = {
           "totalAchievements": 0,
           "currentGamerscore": 1260,
           "totalGamerscore": 2000,
-          "progressPercentage": 63
+          "progressPercentage": 63,
+          "isMythic": false
         },
         "titleHistory": {
           "lastTimePlayed": "2015-09-21T19:03:32Z",
@@ -63,7 +66,8 @@ export const titlesResponse = {
           "totalAchievements": 0,
           "currentGamerscore": 900,
           "totalGamerscore": 1000,
-          "progressPercentage": 90
+          "progressPercentage": 90,
+          "isMythic": false
         },
         "titleHistory": {
           "lastTimePlayed": "2021-08-16T21:27:09.1984312Z",
@@ -85,7 +89,8 @@ export const titlesResponse = {
           "totalAchievements": 86,
           "currentGamerscore": 1255,
           "totalGamerscore": 2000,
-          "progressPercentage": 62
+          "progressPercentage": 62,
+          "isMythic": false
         },
         "titleHistory": {
           "lastTimePlayed": "2017-09-24T03:36:53.692Z",
@@ -106,7 +111,8 @@ export const titlesResponse = {
           "totalAchievements": 0,
           "currentGamerscore": 1055,
           "totalGamerscore": 1250,
-          "progressPercentage": 84
+          "progressPercentage": 84,
+          "isMythic": false
         },
         "titleHistory": {
           "lastTimePlayed": "2021-10-18T16:49:40.3234452Z",
@@ -128,7 +134,8 @@ export const titlesResponse = {
           "totalAchievements": 12,
           "currentGamerscore": 200,
           "totalGamerscore": 200,
-          "progressPercentage": 100
+          "progressPercentage": 100,
+          "isMythic": true
         },
         "titleHistory": {
           "lastTimePlayed": "2026-04-07T22:24:15.7695959Z",
@@ -150,7 +157,8 @@ export const titlesResponse = {
           "totalAchievements": 12,
           "currentGamerscore": 30,
           "totalGamerscore": 200,
-          "progressPercentage": 15
+          "progressPercentage": 15,
+          "isMythic": false
         },
         "titleHistory": {
           "lastTimePlayed": "2026-08-10T18:03:15.3868771Z",
@@ -171,7 +179,8 @@ export const titlesResponse = {
           "totalAchievements": 0,
           "currentGamerscore": 120,
           "totalGamerscore": 1000,
-          "progressPercentage": 12
+          "progressPercentage": 12,
+          "isMythic": false
         },
         "titleHistory": {
           "lastTimePlayed": "2026-10-11T03:00:41.582164Z",

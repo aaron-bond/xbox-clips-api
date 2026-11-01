@@ -34,6 +34,8 @@ export const POLICY = {
   /** A player's achievements and playtime in a game change as they play. */
   achievements: { fresh: 15 * MINUTE, retain: 7 * DAY },
   playtime: { fresh: 15 * MINUTE, retain: 7 * DAY },
+  /** A player's Mythic total. The whole title history has to be read for it, so one read a day. */
+  mythics: { fresh: 24 * HOUR, retain: 30 * DAY },
   /** The same for every visitor, so one upstream call per window serves all traffic. */
   mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
   /** Store screenshots barely change; only the parsed list (a few KB) is stored. */
@@ -53,6 +55,7 @@ export const keys = {
   // v3: the career facts and the recent games they came from, from one read of the
   // title history. v2 held the facts only.
   career: (xuid: string) => `career:v3:${xuid}`,
+  mythics: (xuid: string) => `mythics:${xuid}`,
   achievements: (xuid: string, titleId: string) => `achievements:${xuid}:${titleId}`,
   playtime: (xuid: string, titleId: string) => `playtime:${xuid}:${titleId}`,
   screenshots: (productId: string) => `screenshots:${productId}`,
@@ -143,6 +146,17 @@ export class ClipService {
     const xuid = await this.resolveXuid(id);
     const history = await this.titleHistory(xuid);
     return { xuid, games: history?.games ?? [], limited: history?.stats.limited ?? false };
+  }
+
+  /** The player's Mythic total. Wrapped like the title history, so a hidden history (null) is cached too. */
+  async getMythics(id: PlayerIdentifier): Promise<{ xuid: string; mythics: number | null }> {
+    const xuid = await this.resolveXuid(id);
+    const entry = await this.cache.readThrough(keys.mythics(xuid), async () => {
+      const mythics = await this.provider.getMythics(this.apiKey, xuid);
+      const now = this.now();
+      return { value: { mythics }, freshUntil: now + POLICY.mythics.fresh, retainUntil: now + POLICY.mythics.retain };
+    });
+    return { xuid, mythics: entry!.mythics };
   }
 
   /**

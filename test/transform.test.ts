@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, firstTitles, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toPlayerGames, toProfile, toScreenshots, toAchievements, toMinutesPlayed, type RawPlayerStats, type RawAchievementList, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, firstTitles, mythicsFromTail, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toPlayerGames, toProfile, toScreenshots, toAchievements, toMinutesPlayed, type RawPlayerStats, type RawAchievementList, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
 import { titlesResponse } from './fixtures/titles';
 import { storeDetailsResponse } from './fixtures/store-details';
 import { minutesPlayedResponse, noStatsResponse } from './fixtures/player-stats';
@@ -246,6 +246,20 @@ describe('toPlayerGames (real payload, trimmed)', () => {
     expect(games[0]).toMatchObject({ titleId: '1661962317', name: "Assassin's Creed Black Flag Resynced", gamerscore: 330, totalGamerscore: 1000, unlocked: 19, xbox360: false });
     expect(games[0]!.imageUrl).toMatch(/^https:/);
     expect(games.find((g) => g.name === 'Halo 4')).toMatchObject({ xbox360: true, unlocked: 59 });
+  });
+
+  it('flags Mythic games, and reads a missing flag as not Mythic', () => {
+    expect(games.filter((g) => g.mythic).length).toBeGreaterThan(0);
+    expect(games[0]!.mythic).toBe(false);
+    expect(toPlayerGames([{ name: 'Old' }])[0]!.mythic).toBe(false);
+    expect(toPlayerGames([{ name: 'Fold', achievement: { isMythic: true, progressPercentage: 91 } }])[0]).toMatchObject({ mythic: true, percent: 91 });
+  });
+});
+
+describe('mythicsFromTail', () => {
+  it('reads the total from the end of a real payload, or null without one', () => {
+    expect(mythicsFromTail(JSON.stringify(titlesResponse).slice(-200))).toBe(12);
+    expect(mythicsFromTail('"titles":[]}}')).toBeNull();
   });
 });
 

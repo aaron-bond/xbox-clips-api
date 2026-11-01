@@ -444,9 +444,50 @@ describe('career', () => {
   });
 });
 
+describe('mythics', () => {
+  it('serves the total, cached for a day, as a separate read from the title history', async () => {
+    const { get, provider, advance } = setup();
+    provider.mythics.set(XUID, 13);
+    const res = await get(`/api/v1/players/${XUID}/mythics`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ xuid: XUID, mythics: 13 });
+    advance(23 * 60 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/mythics`);
+    expect(provider.calls.getMythics).toBe(1);
+    advance(2 * 60 * 60 * 1000);
+    await get(`/api/v1/players/${XUID}/mythics`);
+    expect(provider.calls.getMythics).toBe(2);
+    expect(provider.calls.getTitleHistory).toBe(0);
+  });
+
+  it('caches a hidden history as null instead of refetching it', async () => {
+    const { get, provider } = setup();
+    expect(await (await get(`/api/v1/players/${XUID}/mythics`)).json()).toEqual({ xuid: XUID, mythics: null });
+    await get(`/api/v1/players/${XUID}/mythics`);
+    expect(provider.calls.getMythics).toBe(1);
+  });
+
+  it('serves the older count when a refresh fails', async () => {
+    const { get, provider, advance } = setup();
+    provider.mythics.set(XUID, 13);
+    await get(`/api/v1/players/${XUID}/mythics`);
+    advance(25 * 60 * 60 * 1000);
+    provider.failWith = new AppError('UPSTREAM_ERROR');
+    const res = await get(`/api/v1/players/${XUID}/mythics`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ xuid: XUID, mythics: 13 });
+  });
+
+  it('fails only this route when the count has never been read', async () => {
+    const { get, provider } = setup();
+    provider.failWith = new AppError('UPSTREAM_ERROR');
+    expect((await get(`/api/v1/players/${XUID}/mythics`)).status).toBe(502);
+  });
+});
+
 describe('games and achievements', () => {
   const game = (titleId: string, name: string, xbox360 = false) => ({
-    titleId, name, imageUrl: null, gamerscore: 10, totalGamerscore: 100, percent: 10, lastPlayed: '2026-10-11T00:00:00Z', unlocked: 2, xbox360,
+    titleId, name, imageUrl: null, gamerscore: 10, totalGamerscore: 100, percent: 10, lastPlayed: '2026-10-11T00:00:00Z', unlocked: 2, xbox360, mythic: false,
   });
   const stats = { nowPlaying: null, biggestHaul: null, onTheBrink: null, gamesCounted: 2, limited: false };
   const achievement = (n: number) => ({

@@ -143,6 +143,8 @@ export interface PlayerGame extends CareerGame {
   unlocked: number;
   /** An Xbox 360 game: its achievements come from a different upstream endpoint, unlocked ones only. */
   xbox360: boolean;
+  /** All its achievements earned at some point. It stays true if more are added later, so `percent` can be below 100. */
+  mythic: boolean;
 }
 
 /** What one read of a player's title history yields: the career facts and the recent games behind them. */

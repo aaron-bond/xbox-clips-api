@@ -5,6 +5,7 @@ import {
   toClipPage,
   CAREER_GAMES,
   TitlesScanner,
+  mythicsFromTail,
   toAchievements,
   toCareerStats,
   toMinutesPlayed,
@@ -29,6 +30,9 @@ const GAMEMEDIA_PRIVATE = 10209;
 
 const isClipsPrivate = (content: unknown) =>
   !!content && typeof content === 'object' && (content as { errorCode?: unknown }).errorCode === GAMEMEDIA_PRIVATE;
+
+/** Enough of a title history's end to hold `achievementSummary` and the envelope's code. */
+const TITLES_TAIL_BYTES = 512;
 
 /** Below this many remaining requests in the hourly plan budget, every call logs a warning. */
 const LOW_BUDGET_WARNING = 20;
@@ -120,15 +124,7 @@ export class OpenXblProvider implements IXboxDataProvider {
    */
   async getTitleHistory(apiKey: string, xuid: string): Promise<TitleHistory | null> {
     const path = `/titles/${xuid}`;
-    let res: Response;
-    try {
-      res = await this.fetchImpl(BASE_URL + path, {
-        headers: { 'X-Authorization': apiKey, Accept: 'application/json' },
-      });
-    } catch (err) {
-      console.error(`upstream unreachable: GET ${path}`, err);
-      throw new AppError('UPSTREAM_ERROR');
-    }
+    const res = await this.fetchTitles(apiKey, path);
 
     const scanner = new TitlesScanner(CAREER_GAMES);
     const reader = res.body?.getReader();
@@ -150,21 +146,70 @@ export class OpenXblProvider implements IXboxDataProvider {
       // The whole body arrived: it may be an error envelope rather than a history.
       scanner.push(decoder.decode());
       scanner.finish();
-      const inner = /"code"\s*:\s*(\d{3})\s*\}\s*$/.exec(scanner.text);
-      const status = inner ? Number(inner[1]) : res.status;
-      if (status === 403 || status === 404) return null;
-      if (status === 429) {
-        console.warn(`upstream rate limit: GET ${path}`);
-        throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
-      }
-      if (status < 200 || status >= 300) {
-        console.error(`upstream ${status}: GET ${path}: ${scanner.text.slice(0, 500)}`);
-        throw new AppError('UPSTREAM_ERROR');
-      }
+      if (!this.titlesVisible(res, path, scanner.text)) return null;
     }
 
     const { titles, more } = scanner.result();
     return { stats: toCareerStats(titles, more), games: toPlayerGames(titles) };
+  }
+
+  /**
+   * The player's Mythic total, which sits at the very end of the title history
+   * (PLAN-v1.md §5). The whole body has to arrive, but only its last bytes are
+   * kept and decoded, so the titles are never parsed.
+   */
+  async getMythics(apiKey: string, xuid: string): Promise<number | null> {
+    const path = `/titles/${xuid}`;
+    const res = await this.fetchTitles(apiKey, path);
+    let tail = new Uint8Array(0);
+    const reader = res.body?.getReader();
+    try {
+      for (;;) {
+        const read = await reader?.read();
+        if (!read || read.done) break;
+        const joined = new Uint8Array(tail.length + read.value.length);
+        joined.set(tail);
+        joined.set(read.value, tail.length);
+        tail = joined.slice(-TITLES_TAIL_BYTES);
+      }
+    } catch (err) {
+      console.error(`upstream body failed: GET ${path}`, err);
+      throw new AppError('UPSTREAM_ERROR');
+    }
+    const text = new TextDecoder().decode(tail);
+    if (!this.titlesVisible(res, path, text)) return null;
+    return mythicsFromTail(text);
+  }
+
+  private async fetchTitles(apiKey: string, path: string): Promise<Response> {
+    try {
+      return await this.fetchImpl(BASE_URL + path, {
+        headers: { 'X-Authorization': apiKey, Accept: 'application/json' },
+      });
+    } catch (err) {
+      console.error(`upstream unreachable: GET ${path}`, err);
+      throw new AppError('UPSTREAM_ERROR');
+    }
+  }
+
+  /**
+   * Settles a title-history response read to its end, from the end of its text:
+   * it may be an error envelope rather than a history. False when the history is
+   * hidden (403/404), which is not an error.
+   */
+  private titlesVisible(res: Response, path: string, text: string): boolean {
+    const inner = /"code"\s*:\s*(\d{3})\s*\}\s*$/.exec(text);
+    const status = inner ? Number(inner[1]) : res.status;
+    if (status === 403 || status === 404) return false;
+    if (status === 429) {
+      console.warn(`upstream rate limit: GET ${path}`);
+      throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
+    }
+    if (status < 200 || status >= 300) {
+      console.error(`upstream ${status}: GET ${path}: ${text.slice(0, 500)}`);
+      throw new AppError('UPSTREAM_ERROR');
+    }
+    return true;
   }
 
   /** GET, or POST with a JSON body when `body` is given. */

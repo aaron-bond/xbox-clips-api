@@ -111,6 +111,38 @@ describe('OpenXblProvider', () => {
     expect(stats?.biggestHaul?.name).not.toBe('Game 120');
   });
 
+  it('reads the Mythic total from the end of the title history, split across chunks', async () => {
+    const titles = Array.from({ length: 300 }, (_, i) => ({ titleId: String(i), name: `Gamé ${i}`, type: 'Game' }));
+    const text = JSON.stringify({ content: { xuid: XUID, titles, achievementSummary: { mythicsUnlocked: 13 } }, code: 200 });
+    for (const size of [1, 7, 997]) {
+      const bytes = new TextEncoder().encode(text.slice(-5000));
+      let sent = 0;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const piece = bytes.slice(sent, sent + size);
+          sent += size;
+          if (piece.length) controller.enqueue(piece);
+          else controller.close();
+        },
+      });
+      expect(await new OpenXblProvider(vi.fn(async () => new Response(body))).getMythics('k', XUID)).toBe(13);
+    }
+    expect(await new OpenXblProvider(fakeFetch(200, titlesResponse)).getMythics('k', XUID)).toBe(12);
+  });
+
+  it('gives no Mythic total for a hidden history or a body without one', async () => {
+    expect(await new OpenXblProvider(fakeFetch(200, { content: {}, code: 403 })).getMythics('k', XUID)).toBeNull();
+    expect(await new OpenXblProvider(fakeFetch(404, '')).getMythics('k', XUID)).toBeNull();
+    expect(await new OpenXblProvider(fakeFetch(200, { content: { titles: [] }, code: 200 })).getMythics('k', XUID)).toBeNull();
+  });
+
+  it('turns a throttled or broken Mythic read into the usual errors', async () => {
+    await expect(new OpenXblProvider(fakeFetch(200, { content: {}, code: 429 })).getMythics('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_RATE_LIMIT' });
+    await expect(new OpenXblProvider(fakeFetch(500, 'oops')).getMythics('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
+    const body = new ReadableStream<Uint8Array>({ pull: (c) => c.error(new Error('cut off')) });
+    await expect(new OpenXblProvider(vi.fn(async () => new Response(body))).getMythics('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
+  });
+
   it('stops reading a title history once it has 100 games, even split across chunks', async () => {
     const titles = Array.from({ length: 300 }, (_, i) => ({ titleId: String(i), name: `Game ${i} {"}`, type: 'Game', achievement: { currentGamerscore: 1, totalGamerscore: 2, progressPercentage: 50 } }));
     const text = JSON.stringify({ content: { xuid: XUID, titles }, code: 200 });
