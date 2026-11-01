@@ -526,11 +526,14 @@ Built, API first:
 - **Cache:** `mythics:{xuid}`, `{ mythics }`, fresh 24 hours, kept 30 days. A
   new Mythic reaches a game's tile within 2 hours, so a longer window would let
   the total visibly lag its own page. A failed refresh serves the older count.
-- **CPU:** reading a heavy player's whole body once took 13-14 ms against the
-  free plan's 10 ms (see Career facts), most of it decoding and parsing, which
-  this read skips. Exceeding the limit would fail only this route: the UI leaves
-  the count out. It is requested only from the player's achievements page,
-  never the player page.
+- **CPU:** the free plan allows 10 ms. Reading the chunks in a JavaScript loop
+  took 25-26 ms live for players with long histories (2026-11-01), though the
+  requests still succeeded, so the runtime buffers the body instead. Exceeding
+  the limit would fail only this route: the UI leaves the count out. It is
+  requested only from the player's achievements page, never the player page.
+- **Speed:** a read has taken 5-29 s, and `/titles` has answered a 520 after
+  31 s for one very heavy account, so the UI loads the count on its own and
+  never waits for it.
 
 ### Most-played games
 
