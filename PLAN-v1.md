@@ -491,6 +491,49 @@ Other sources were sampled and rejected: per-achievement records (unordered,
 tens of thousands for a heavy player, no rarity) and player stats (no
 playtime value).
 
+### Mythics (planned, not built)
+
+A game is **Mythic** once a player has earned all its achievements. It stays
+Mythic if more are added later, so a Mythic can sit below 100%: *A Fold
+Apart* is Mythic at 1,000 of 1,100 G. Seen in `GET /v2/titles/{xuid}` on
+2026-11-01, with the word absent from the OpenAPI spec:
+
+- Each title has `achievement.isMythic`.
+- `content.achievementSummary.mythicsUnlocked` is the player's total. It comes
+  **after** the titles, in the last 100 bytes or so of a body of about 1 MB.
+- The total can exceed the flagged titles, because the history stops at 1,000
+  games: one player showed 13 in total, 7 flagged, only 1 in their last 100.
+- No Mythic icon is supplied.
+
+The total has no cheaper source: `/titles` takes no filters, it ignores an HTTP
+`Range` header, and neither `/v2/player/summary/{xuid}` nor
+`/v3/achievements/player/{xuid}?maxItems=1` carries it.
+
+To build, API first:
+
+1. **Recent games:** add `mythic: boolean` to `PlayerGame`, from
+   `achievement.isMythic`. It comes with the 100 games already read, so it
+   costs nothing. No cache key change: entries refresh within 2 hours, and a
+   missing field reads as not Mythic.
+2. **The count:** `GET /api/v1/players/:identifier/mythics` returns
+   `{ xuid, mythics }`, null when the history is hidden. A new provider method
+   reads the title history to its end, keeping only the tail of the text and
+   taking `mythicsUnlocked` from it with a match, so the titles are never
+   parsed. It stays apart from the 100-game read, so `/career` and `/games`
+   keep stopping early.
+3. **Cache:** `mythics:{xuid}`, `{ mythics }`, fresh 24 hours, kept 30 days. A
+   new Mythic reaches a game's tile within 2 hours, so a longer window would
+   let the total visibly lag its own page. A failed refresh serves the older
+   count.
+4. **Measure, then ship:** reading a heavy player's whole body took 13-14 ms of
+   CPU against the free plan's 10 ms (see Career facts), so check `cpuTime` for
+   a 1,000-game player with `wrangler tail`. Exceeding it fails only this
+   route: the UI leaves the count out. Requests are only made when someone
+   opens the player's achievements page, never from the player page.
+5. **Tests:** the flag and the count from a trimmed real payload (the fixture
+   must keep `achievementSummary`), a stream split across chunks, a hidden
+   history, one upstream call per day per player.
+
 ### Most-played games
 
 `GET /v2/marketplace/most-played` returns a ranked first page of 25 store

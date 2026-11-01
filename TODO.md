@@ -10,6 +10,12 @@ any trade-off made.
       against the free plan's 10 ms; no code change reduced it (PLAN §5). Watch
       for `exceededCpu` outcomes; if they appear, move to Workers Paid.
 
+## Planned
+
+- [ ] **Mythics** (PLAN §5, "Mythics"): `mythic` on recent games, and
+      `GET /players/:id/mythics`, cached 24 hours. Check CPU for a 1,000-game
+      player before relying on it.
+
 ## Later
 
 - [ ] **Lock the API to the site, if abuse appears** (PLAN §6, "Locking the
