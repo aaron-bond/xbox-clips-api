@@ -1,4 +1,4 @@
-import type { Achievement, CareerGame, CareerStats, ClipPage, Game, GameClipInfo, PlayerGame, Reputation, Screenshot, XboxUserProfile } from '../domain';
+import type { Achievement, CareerGame, CareerStats, ClipPage, Game, GameClipInfo, NearestCompletion, PlayerGame, Reputation, Screenshot, XboxUserProfile } from '../domain';
 
 /**
  * Raw OpenXBL payload shapes, as observed in live responses on 2026-10-16
@@ -378,6 +378,23 @@ export function toPlayerGames(titles: RawTitle[]): PlayerGame[] {
     xbox360: (t.devices ?? []).includes('Xbox360'),
     mythic: t.achievement?.isMythic === true,
   }));
+}
+
+/** How many games the nearest-completion list holds. */
+export const NEAREST_GAMES = 100;
+/** Upstream lists at most this many titles, however many a player has. */
+export const TITLES_LISTED = 1000;
+
+/**
+ * The player's started, unfinished games, nearest to complete first; the bigger
+ * game wins a tie. Mythics are left out even below 100%: they count as finished.
+ */
+export function toNearestCompletion(titles: RawTitle[]): NearestCompletion {
+  const earned = (t: RawTitle) => t.achievement?.currentGamerscore ?? 0;
+  const total = (t: RawTitle) => t.achievement?.totalGamerscore ?? 0;
+  const unfinished = titles.filter((t) => isGame(t) && earned(t) > 0 && earned(t) < total(t) && !t.achievement?.isMythic);
+  unfinished.sort((a, b) => earned(b) / total(b) - earned(a) / total(a) || total(b) - total(a));
+  return { games: toPlayerGames(unfinished.slice(0, NEAREST_GAMES)), capped: titles.length >= TITLES_LISTED };
 }
 
 export function toCareerStats(titles: RawTitle[], limited: boolean): CareerStats {

@@ -143,6 +143,19 @@ describe('OpenXblProvider', () => {
     await expect(new OpenXblProvider(vi.fn(async () => new Response(body))).getMythics('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
   });
 
+  it('reads the nearest-completion list from the whole title history, past the first 100 games', async () => {
+    const titles = Array.from({ length: 300 }, (_, i) => ({ titleId: String(i), name: `Game ${i}`, type: 'Game', achievement: { currentGamerscore: i + 1, totalGamerscore: 1000 } }));
+    const found = await new OpenXblProvider(fakeFetch(200, { content: { xuid: XUID, titles }, code: 200 })).getNearestCompletion('k', XUID);
+    expect(found?.games[0]).toMatchObject({ name: 'Game 299', gamerscore: 300 });
+    expect(found?.capped).toBe(false);
+  });
+
+  it('gives no nearest-completion list for a hidden history, and the usual errors otherwise', async () => {
+    expect(await new OpenXblProvider(fakeFetch(200, { content: {}, code: 403 })).getNearestCompletion('k', XUID)).toBeNull();
+    await expect(new OpenXblProvider(fakeFetch(200, { content: {}, code: 429 })).getNearestCompletion('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_RATE_LIMIT' });
+    await expect(new OpenXblProvider(vi.fn(async () => new Response('not json'))).getNearestCompletion('k', XUID)).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
+  });
+
   it('stops reading a title history once it has 100 games, even split across chunks', async () => {
     const titles = Array.from({ length: 300 }, (_, i) => ({ titleId: String(i), name: `Game ${i} {"}`, type: 'Game', achievement: { currentGamerscore: 1, totalGamerscore: 2, progressPercentage: 50 } }));
     const text = JSON.stringify({ content: { xuid: XUID, titles }, code: 200 });

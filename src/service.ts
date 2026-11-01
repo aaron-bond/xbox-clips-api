@@ -1,5 +1,5 @@
 import { Cache } from './cache';
-import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameAchievements, type GameClipInfo, type PlayerGame, type Screenshot, type TitleHistory, type XboxUserProfile } from './domain';
+import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameAchievements, type GameClipInfo, type NearestCompletion, type PlayerGame, type Screenshot, type TitleHistory, type XboxUserProfile } from './domain';
 import { AppError } from './errors';
 import type { IXboxDataProvider } from './provider/types';
 import type { PlayerIdentifier } from './validation';
@@ -157,6 +157,16 @@ export class ClipService {
       return { value: { mythics }, freshUntil: now + POLICY.mythics.fresh, retainUntil: now + POLICY.mythics.retain };
     });
     return { xuid, mythics: entry!.mythics };
+  }
+
+  /**
+   * The games a player is closest to finishing. Deliberately not cached: it runs
+   * only when a visitor presses the button, and each press is one upstream call.
+   */
+  async getNearestCompletion(id: PlayerIdentifier): Promise<{ xuid: string } & NearestCompletion> {
+    const xuid = await this.resolveXuid(id);
+    const found = await this.provider.getNearestCompletion(this.apiKey, xuid);
+    return { xuid, games: found?.games ?? [], capped: found?.capped ?? false };
   }
 
   /**

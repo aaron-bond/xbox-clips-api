@@ -1,4 +1,4 @@
-import type { Achievement, ClipPage, Game, Screenshot, TitleHistory, XboxUserProfile } from '../domain';
+import type { Achievement, ClipPage, Game, NearestCompletion, Screenshot, TitleHistory, XboxUserProfile } from '../domain';
 import { AppError } from '../errors';
 import {
   pickSearchMatch,
@@ -11,6 +11,7 @@ import {
   toMinutesPlayed,
   toPlayerGames,
   toMostPlayed,
+  toNearestCompletion,
   toProfile,
   toScreenshots,
   type RawAccount,
@@ -20,6 +21,7 @@ import {
   type RawPlayerStats,
   type RawSearch,
   type RawStoreDetails,
+  type RawTitle,
 } from './openxbl-transform';
 import type { IXboxDataProvider } from './types';
 
@@ -172,6 +174,31 @@ export class OpenXblProvider implements IXboxDataProvider {
     const text = new TextDecoder().decode(tail);
     if (!this.titlesVisible(res, path, text)) return null;
     return mythicsFromTail(text);
+  }
+
+  /**
+   * The games the player is closest to finishing. This is the one read that
+   * parses the whole title history, about 1 MB, so it runs only when a visitor
+   * asks for it (PLAN-v1.md §5).
+   */
+  async getNearestCompletion(apiKey: string, xuid: string): Promise<NearestCompletion | null> {
+    const path = `/titles/${xuid}`;
+    const res = await this.fetchTitles(apiKey, path);
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (err) {
+      console.error(`upstream body failed: GET ${path}`, err);
+      throw new AppError('UPSTREAM_ERROR');
+    }
+    if (!this.titlesVisible(res, path, text.slice(-TITLES_TAIL_BYTES))) return null;
+    try {
+      const raw = JSON.parse(text) as { content?: { titles?: RawTitle[] } };
+      return toNearestCompletion(raw.content?.titles ?? []);
+    } catch (err) {
+      console.error(`upstream body unreadable: GET ${path}`, err);
+      throw new AppError('UPSTREAM_ERROR');
+    }
   }
 
   private async fetchTitles(apiKey: string, path: string): Promise<Response> {

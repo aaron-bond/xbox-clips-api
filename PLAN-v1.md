@@ -368,6 +368,7 @@ Base path `/api/v1`.
 | `GET /api/v1/players/:identifier/games` | `{ xuid, games, limited }`: the player's recent games (at most 100, newest first) with gamerscore progress, unlocked count and `xbox360` and `mythic` flags. From the same cached read as `/career`, so it costs no extra upstream call. Empty when the history is hidden. |
 | `GET /api/v1/players/:identifier/achievements/:titleId` | `{ xuid, titleId, game, titleName, lockedListed, minutesPlayed, achievements }`: the player's achievements in one game, and minutes played (null when Xbox reports none). Xbox 360 games (known from the recent games) use the 360 endpoint and set `lockedListed: false`. Hidden achievements of a recent game come back as an empty list; a title with none that isn't among the recent games is `404 NOT_FOUND`. A malformed title ID is `400 INVALID_IDENTIFIER`. |
 | `GET /api/v1/players/:identifier/mythics` | `{ xuid, mythics }`: the player's Mythic total, null when the history is hidden. A separate full read of the title history, cached a day (§5). |
+| `GET /api/v1/players/:identifier/nearest-completion` | `{ xuid, games, capped }`: the player's 100 started, unfinished games nearest to complete, from their whole history, in the `/games` shape. `capped` is true when the history reached the 1,000 titles upstream lists. Empty when the history is hidden. Not cached (§5). |
 | `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
 | `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
 | `GET /api/v1/games/:productId/screenshots` | `{ screenshots }`: the game's store screenshots (`url`, `caption` or null, `width`, `height`), in store order, at most 30. Only for games in the most-played list: any other id is `404 GAME_NOT_FOUND` before any upstream call, so arbitrary ids can't spend the budget. |
@@ -537,6 +538,21 @@ Built, API first:
 - **Speed:** a read has taken 5-29 s, and `/titles` has answered a 520 after
   31 s for one very heavy account, so the UI loads the count on its own and
   never waits for it.
+
+### Nearest completion
+
+The games page can list the 100 games a player is closest to finishing, from
+their whole history rather than their last 100. Started, unfinished games only,
+by share of gamerscore earned, the bigger game winning a tie. Mythics are left
+out even below 100%, because they count as finished. "Whole" means the 1,000
+titles upstream lists; `capped` says when that limit was reached.
+
+It is the only read that parses the full title history, and so the most
+expensive: a separate route, run only when a visitor presses the button, so
+`/career` and `/games` keep stopping at 100 games. It is deliberately not cached
+in KV, since little traffic is expected: each request is one upstream call and
+up to about 30 seconds. The browser reuses a result for 5 minutes. If it is ever
+used more, a short KV entry is the fix.
 
 ### Most-played games
 

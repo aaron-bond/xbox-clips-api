@@ -154,6 +154,14 @@ export interface TitleHistory {
   games: PlayerGame[];
 }
 
+/** The games a player is closest to finishing, from their whole title history. */
+export interface NearestCompletion {
+  /** Started and unfinished, nearest to complete first, at most NEAREST_GAMES. */
+  games: PlayerGame[];
+  /** True when the history reached Xbox's limit, so older games could not be searched. */
+  capped: boolean;
+}
+
 /** One achievement, as the player stands with it. */
 export interface Achievement {
   id: string;

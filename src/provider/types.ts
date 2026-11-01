@@ -1,4 +1,4 @@
-import type { Achievement, ClipPage, Game, Screenshot, TitleHistory, XboxUserProfile } from '../domain';
+import type { Achievement, ClipPage, Game, NearestCompletion, Screenshot, TitleHistory, XboxUserProfile } from '../domain';
 
 /**
  * The single seam between the service and upstream (PLAN-v1.md §3). Routing and
@@ -28,6 +28,9 @@ export interface IXboxDataProvider {
 
   /** The player's Mythic total. Null when the history is not visible. */
   getMythics(apiKey: string, xuid: string): Promise<number | null>;
+
+  /** The games the player is closest to finishing, from their whole history. Null when the history is not visible. */
+  getNearestCompletion(apiKey: string, xuid: string): Promise<NearestCompletion | null>;
 
   /** Minutes played in one game per XUID; players with no figure are left out. */
   getMinutesPlayed(apiKey: string, xuids: string[], titleId: string): Promise<Record<string, number>>;

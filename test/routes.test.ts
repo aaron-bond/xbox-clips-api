@@ -485,6 +485,32 @@ describe('mythics', () => {
   });
 });
 
+describe('nearest completion', () => {
+  const games = [{ titleId: '1', name: 'Close', imageUrl: null, gamerscore: 90, totalGamerscore: 100, percent: 90, lastPlayed: null, unlocked: 9, xbox360: false, mythic: false }];
+
+  it('serves the list, reading upstream on every request and leaving the title history alone', async () => {
+    const { get, provider } = setup();
+    provider.nearest.set(XUID, { games, capped: true });
+    const res = await get(`/api/v1/players/${XUID}/nearest-completion`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ xuid: XUID, games, capped: true });
+    await get(`/api/v1/players/${XUID}/nearest-completion`);
+    expect(provider.calls.getNearestCompletion).toBe(2);
+    expect(provider.calls.getTitleHistory).toBe(0);
+  });
+
+  it('gives an empty list for a hidden history', async () => {
+    const { get } = setup();
+    expect(await (await get(`/api/v1/players/${XUID}/nearest-completion`)).json()).toEqual({ xuid: XUID, games: [], capped: false });
+  });
+
+  it('answers with the usual error when upstream fails', async () => {
+    const { get, provider } = setup();
+    provider.failWith = new AppError('UPSTREAM_ERROR');
+    expect((await get(`/api/v1/players/${XUID}/nearest-completion`)).status).toBe(502);
+  });
+});
+
 describe('games and achievements', () => {
   const game = (titleId: string, name: string, xbox360 = false) => ({
     titleId, name, imageUrl: null, gamerscore: 10, totalGamerscore: 100, percent: 10, lastPlayed: '2026-10-11T00:00:00Z', unlocked: 2, xbox360, mythic: false,

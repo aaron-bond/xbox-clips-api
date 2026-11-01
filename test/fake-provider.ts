@@ -1,4 +1,4 @@
-import type { Achievement, ClipPage, Game, GameClipInfo, Screenshot, TitleHistory, XboxUserProfile } from '../src/domain';
+import type { Achievement, ClipPage, Game, GameClipInfo, NearestCompletion, Screenshot, TitleHistory, XboxUserProfile } from '../src/domain';
 import { AppError } from '../src/errors';
 import type { IXboxDataProvider } from '../src/provider/types';
 
@@ -16,10 +16,11 @@ export class FakeProvider implements IXboxDataProvider {
   mostPlayed: Game[] = [];
   histories = new Map<string, TitleHistory | null>();
   mythics = new Map<string, number | null>();
+  nearest = new Map<string, NearestCompletion | null>();
   /** Keyed `${xuid}:${titleId}`. */
   achievements = new Map<string, { titleName: string | null; achievements: Achievement[] } | null>();
   screenshots = new Map<string, Screenshot[]>();
-  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getMythics: 0, getAchievements: 0, getMinutesPlayed: 0, getScreenshots: 0 };
+  calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getMythics: 0, getNearestCompletion: 0, getAchievements: 0, getMinutesPlayed: 0, getScreenshots: 0 };
   /** The xbox360 flag of each getAchievements call, in order. */
   achievementsAsked: boolean[] = [];
   /** Keyed `${xuid}:${titleId}`. */
@@ -63,6 +64,12 @@ export class FakeProvider implements IXboxDataProvider {
     this.calls.getMythics++;
     this.maybeFail();
     return this.mythics.get(xuid) ?? null;
+  }
+
+  async getNearestCompletion(_apiKey: string, xuid: string): Promise<NearestCompletion | null> {
+    this.calls.getNearestCompletion++;
+    this.maybeFail();
+    return structuredClone(this.nearest.get(xuid) ?? null);
   }
 
   async getAchievements(_apiKey: string, xuid: string, titleId: string, xbox360: boolean) {

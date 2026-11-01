@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickDescription, pickSearchMatch, firstTitles, mythicsFromTail, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toPlayerGames, toProfile, toScreenshots, toAchievements, toMinutesPlayed, type RawPlayerStats, type RawAchievementList, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
+import { pickDescription, pickSearchMatch, firstTitles, mythicsFromTail, toNearestCompletion, NEAREST_GAMES, TITLES_LISTED, TitlesScanner, toCareerStats, toClip, toClipPage, toMostPlayed, toPlayerGames, toProfile, toScreenshots, toAchievements, toMinutesPlayed, type RawPlayerStats, type RawAchievementList, type RawMostPlayed, type RawStoreDetails, type RawTitle } from '../src/provider/openxbl-transform';
 import { titlesResponse } from './fixtures/titles';
 import { storeDetailsResponse } from './fixtures/store-details';
 import { minutesPlayedResponse, noStatsResponse } from './fixtures/player-stats';
@@ -253,6 +253,38 @@ describe('toPlayerGames (real payload, trimmed)', () => {
     expect(games[0]!.mythic).toBe(false);
     expect(toPlayerGames([{ name: 'Old' }])[0]!.mythic).toBe(false);
     expect(toPlayerGames([{ name: 'Fold', achievement: { isMythic: true, progressPercentage: 91 } }])[0]).toMatchObject({ mythic: true, percent: 91 });
+  });
+});
+
+describe('toNearestCompletion', () => {
+  const title = (name: string, earned: number, total: number, extra: Partial<RawTitle> = {}): RawTitle => ({
+    titleId: name, name, type: 'Game', achievement: { currentGamerscore: earned, totalGamerscore: total }, ...extra,
+  });
+
+  it('puts the nearest first, breaking ties toward the bigger game', () => {
+    const { games } = toNearestCompletion([title('Half', 500, 1000), title('Small', 90, 100), title('Big', 900, 1000)]);
+    expect(games.map((g) => g.name)).toEqual(['Big', 'Small', 'Half']);
+  });
+
+  it('leaves out unstarted, finished, Mythic, achievement-less and non-game titles', () => {
+    const { games } = toNearestCompletion([
+      title('Keep', 10, 100),
+      title('Unstarted', 0, 100),
+      title('Finished', 100, 100),
+      title('Mythic', 1000, 1100, { achievement: { currentGamerscore: 1000, totalGamerscore: 1100, isMythic: true } }),
+      title('None', 0, 0),
+      title('App', 10, 100, { type: 'App' }),
+    ]);
+    expect(games.map((g) => g.name)).toEqual(['Keep']);
+  });
+
+  it('keeps the top 100, and says when the history reached the listed limit', () => {
+    const titles = Array.from({ length: TITLES_LISTED }, (_, i) => title(`G${i}`, i + 1, 2000));
+    const { games, capped } = toNearestCompletion(titles);
+    expect(games).toHaveLength(NEAREST_GAMES);
+    expect(games[0]!.name).toBe('G999');
+    expect(capped).toBe(true);
+    expect(toNearestCompletion(titles.slice(0, 999)).capped).toBe(false);
   });
 });
 
