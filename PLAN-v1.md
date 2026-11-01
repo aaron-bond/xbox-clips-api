@@ -528,9 +528,12 @@ Built, API first:
   the total visibly lag its own page. A failed refresh serves the older count.
 - **CPU:** the free plan allows 10 ms. Reading the chunks in a JavaScript loop
   took 25-26 ms live for players with long histories (2026-11-01), though the
-  requests still succeeded, so the runtime buffers the body instead. Exceeding
-  the limit would fail only this route: the UI leaves the count out. It is
+  requests still succeeded. With the runtime buffering the body, the same two
+  players took 6 and 2 ms. Exceeding the limit would fail only this route: the
+  UI leaves the count out. It is
   requested only from the player's achievements page, never the player page.
+- **Failures:** neither a failed read nor one abandoned part-way is cached, so
+  the next visit spends another upstream call.
 - **Speed:** a read has taken 5-29 s, and `/titles` has answered a 520 after
   31 s for one very heavy account, so the UI loads the count on its own and
   never waits for it.
