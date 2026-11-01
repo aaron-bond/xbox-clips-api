@@ -393,14 +393,20 @@ export const TITLES_LISTED = 1000;
 
 /**
  * The player's started, unfinished games, nearest to complete first; the bigger
- * game wins a tie. Mythics are left out even below 100%: they count as finished.
+ * game wins a tie. Mythics are left out even below 100%: they count as finished,
+ * and have their own list, which keeps the history's newest-first order.
  */
 export function toNearestCompletion(titles: RawTitle[]): NearestCompletion {
   const earned = (t: RawTitle) => t.achievement?.currentGamerscore ?? 0;
   const total = (t: RawTitle) => t.achievement?.totalGamerscore ?? 0;
   const unfinished = titles.filter((t) => isGame(t) && earned(t) > 0 && earned(t) < total(t) && !t.achievement?.isMythic);
   unfinished.sort((a, b) => earned(b) / total(b) - earned(a) / total(a) || total(b) - total(a));
-  return { games: toPlayerGames(unfinished.slice(0, NEAREST_GAMES)), capped: titles.length >= TITLES_LISTED };
+  const finished = titles.filter((t) => isGame(t) && (t.achievement?.isMythic || (total(t) > 0 && earned(t) >= total(t))));
+  return {
+    games: toPlayerGames(unfinished.slice(0, NEAREST_GAMES)),
+    mythics: toPlayerGames(finished.slice(0, NEAREST_GAMES)),
+    capped: titles.length >= TITLES_LISTED,
+  };
 }
 
 export function toCareerStats(titles: RawTitle[], limited: boolean): CareerStats {

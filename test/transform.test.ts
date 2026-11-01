@@ -283,6 +283,16 @@ describe('toNearestCompletion', () => {
     expect(games.map((g) => g.name)).toEqual(['Keep']);
   });
 
+  it('lists Mythics and fully earned games in history order, with the Mythic below 100% kept', () => {
+    const { mythics } = toNearestCompletion([
+      title('Unfinished', 10, 100),
+      title('Finished', 100, 100),
+      title('Low Mythic', 400, 2195, { achievement: { currentGamerscore: 400, totalGamerscore: 2195, isMythic: true } }),
+      title('None', 0, 0),
+    ]);
+    expect(mythics.map((g) => [g.name, g.mythic])).toEqual([['Finished', false], ['Low Mythic', true]]);
+  });
+
   it('keeps the top 100, and says when the history reached the listed limit', () => {
     const titles = Array.from({ length: TITLES_LISTED }, (_, i) => title(`G${i}`, i + 1, 2000));
     const { games, capped } = toNearestCompletion(titles);

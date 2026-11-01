@@ -158,6 +158,8 @@ export interface TitleHistory {
 export interface NearestCompletion {
   /** Started and unfinished, nearest to complete first, at most NEAREST_GAMES. */
   games: PlayerGame[];
+  /** Mythic or fully earned games, most recently played first, at most NEAREST_GAMES. From the same read. */
+  mythics: PlayerGame[];
   /** True when the history reached Xbox's limit, so older games could not be searched. */
   capped: boolean;
 }

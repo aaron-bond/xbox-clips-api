@@ -68,7 +68,7 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
     return c.json(await service(c).getMythics(id));
   });
 
-  // The games a player is closest to finishing: a full read of the title history on every call.
+  // The games a player is closest to finishing, and their Mythics: a full read of the title history on every call.
   app.get('/api/v1/players/:identifier/nearest-completion', async (c) => {
     const id = parsePlayerIdentifier(c.req.param('identifier'));
     return c.json(await service(c).getNearestCompletion(id));

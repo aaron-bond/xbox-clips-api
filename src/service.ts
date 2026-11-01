@@ -166,7 +166,7 @@ export class ClipService {
   async getNearestCompletion(id: PlayerIdentifier): Promise<{ xuid: string } & NearestCompletion> {
     const xuid = await this.resolveXuid(id);
     const found = await this.provider.getNearestCompletion(this.apiKey, xuid);
-    return { xuid, games: found?.games ?? [], capped: found?.capped ?? false };
+    return { xuid, games: found?.games ?? [], mythics: found?.mythics ?? [], capped: found?.capped ?? false };
   }
 
   /**

@@ -490,10 +490,10 @@ describe('nearest completion', () => {
 
   it('serves the list, reading upstream on every request and leaving the title history alone', async () => {
     const { get, provider } = setup();
-    provider.nearest.set(XUID, { games, capped: true });
+    provider.nearest.set(XUID, { games, mythics: [], capped: true });
     const res = await get(`/api/v1/players/${XUID}/nearest-completion`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ xuid: XUID, games, capped: true });
+    expect(await res.json()).toEqual({ xuid: XUID, games, mythics: [], capped: true });
     await get(`/api/v1/players/${XUID}/nearest-completion`);
     expect(provider.calls.getNearestCompletion).toBe(2);
     expect(provider.calls.getTitleHistory).toBe(0);
@@ -501,7 +501,7 @@ describe('nearest completion', () => {
 
   it('gives an empty list for a hidden history', async () => {
     const { get } = setup();
-    expect(await (await get(`/api/v1/players/${XUID}/nearest-completion`)).json()).toEqual({ xuid: XUID, games: [], capped: false });
+    expect(await (await get(`/api/v1/players/${XUID}/nearest-completion`)).json()).toEqual({ xuid: XUID, games: [], mythics: [], capped: false });
   });
 
   it('answers with the usual error when upstream fails', async () => {
