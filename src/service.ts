@@ -171,24 +171,32 @@ export class ClipService {
 
   /**
    * A player's achievements in one game. The recent games say whether it is an
-   * Xbox 360 game, which takes a different upstream endpoint; a game outside
-   * them is treated as current.
+   * Xbox 360 game, which takes a different upstream endpoint. A game outside
+   * them can't be told apart in advance, and the current endpoint answers an
+   * empty list for a 360 game, so empty there means asking the 360 one too.
    */
   async getAchievements(id: PlayerIdentifier, titleId: string): Promise<GameAchievements> {
     const xuid = await this.resolveXuid(id);
     const game = (await this.titleHistory(xuid))?.games.find((g) => g.titleId === titleId) ?? null;
-    const xbox360 = game?.xbox360 ?? false;
     const entry = await this.cache.readThrough(keys.achievements(xuid, titleId), async () => {
-      const fetched = await this.provider.getAchievements(this.apiKey, xuid, titleId, xbox360);
+      const fetched = await this.fetchAchievements(xuid, titleId, game);
       const now = this.now();
       return { value: fetched, freshUntil: now + POLICY.achievements.fresh, retainUntil: now + POLICY.achievements.retain };
     });
     // Null: the player's achievements aren't visible. Shown as none, like a private reel.
-    const found = entry ?? { titleName: null, achievements: [] };
+    const found = entry ?? { titleName: null, achievements: [], xbox360: false };
     if (found.achievements.length === 0 && !game) throw new AppError('NOT_FOUND');
     // Secondary: if playtime can't be had, the achievements still are.
     const minutesPlayed = await this.minutesPlayed(xuid, titleId).catch(() => null);
-    return { xuid, titleId, game, titleName: found.titleName, lockedListed: !xbox360, minutesPlayed, achievements: found.achievements };
+    return { xuid, titleId, game, titleName: found.titleName, lockedListed: !(game?.xbox360 ?? found.xbox360), minutesPlayed, achievements: found.achievements };
+  }
+
+  private async fetchAchievements(xuid: string, titleId: string, game: PlayerGame | null) {
+    const xbox360 = game?.xbox360 ?? false;
+    const fetched = await this.provider.getAchievements(this.apiKey, xuid, titleId, xbox360);
+    if (game || fetched?.achievements.length) return fetched && { ...fetched, xbox360 };
+    const older = await this.provider.getAchievements(this.apiKey, xuid, titleId, true);
+    return older && { ...older, xbox360: true };
   }
 
   private async minutesPlayed(xuid: string, titleId: string): Promise<number | null> {

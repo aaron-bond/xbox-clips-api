@@ -529,6 +529,27 @@ describe('games and achievements', () => {
     expect(provider.calls.getTitleHistory).toBe(1);
   });
 
+  it('falls back to the 360 endpoint for a game outside the recent list, once', async () => {
+    const { get, provider } = setup();
+    provider.histories.set(XUID, { stats, games: [game('1', 'Recent')] });
+    provider.achievementsByEndpoint = (xbox360) => (xbox360 ? { titleName: null, achievements: [achievement(1)] } : { titleName: null, achievements: [] });
+    const res = await get(`/api/v1/players/${XUID}/achievements/9`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ game: null, lockedListed: false, achievements: [{ name: 'A1' }] });
+    expect(provider.achievementsAsked).toEqual([false, true]);
+
+    await get(`/api/v1/players/${XUID}/achievements/9`);
+    expect(provider.achievementsAsked).toEqual([false, true]);
+  });
+
+  it('asks only the current endpoint when it has achievements for a game outside the recent list', async () => {
+    const { get, provider } = setup();
+    provider.histories.set(XUID, { stats, games: [game('1', 'Recent')] });
+    provider.achievements.set(`${XUID}:9`, { titleName: 'Older', achievements: [achievement(1)] });
+    expect(await (await get(`/api/v1/players/${XUID}/achievements/9`)).json()).toMatchObject({ game: null, lockedListed: true });
+    expect(provider.achievementsAsked).toEqual([false]);
+  });
+
   it("serves a game's achievements, cached for 15 minutes, using the 360 endpoint where the history says so", async () => {
     const { get, provider, advance } = setup();
     provider.histories.set(XUID, { stats, games: [game('1', 'Modern'), game('2', 'Old', true)] });

@@ -19,6 +19,8 @@ export class FakeProvider implements IXboxDataProvider {
   nearest = new Map<string, NearestCompletion | null>();
   /** Keyed `${xuid}:${titleId}`. */
   achievements = new Map<string, { titleName: string | null; achievements: Achievement[] } | null>();
+  /** Answers by endpoint instead, for a title that differs between the two. */
+  achievementsByEndpoint: ((xbox360: boolean) => { titleName: string | null; achievements: Achievement[] } | null) | null = null;
   screenshots = new Map<string, Screenshot[]>();
   calls = { resolveGamertag: 0, getProfile: 0, getClips: 0, getMostPlayedGames: 0, getTitleHistory: 0, getMythics: 0, getNearestCompletion: 0, getAchievements: 0, getMinutesPlayed: 0, getScreenshots: 0 };
   /** The xbox360 flag of each getAchievements call, in order. */
@@ -76,6 +78,7 @@ export class FakeProvider implements IXboxDataProvider {
     this.calls.getAchievements++;
     this.achievementsAsked.push(xbox360);
     this.maybeFail();
+    if (this.achievementsByEndpoint) return this.achievementsByEndpoint(xbox360);
     return structuredClone(this.achievements.get(`${xuid}:${titleId}`) ?? null);
   }
 
