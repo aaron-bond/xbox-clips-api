@@ -14,8 +14,8 @@ any trade-off made.
 
 ## Next
 
-- [ ] **Observability, across the API and the UI.** Needs a proper plan of
-      attack before anything is built; the same item is in the UI's TODO.
+- [ ] **Observability, across the API and the UI.** API plan in PLAN §11;
+      start with its spike (§11.5). The same item is in the UI's TODO.
       Today Workers Logs keep a few days of logs and nothing alerts. The
       plan should cover alerts on: CPU limit breaches (`exceededCpu`), the
       upstream budget running low (`X-RateLimit-Remaining`), rate-limit

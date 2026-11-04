@@ -832,7 +832,7 @@ working backlog; `CLAUDE.md` is the map of the code.
 
 ### Open
 
-None.
+- **Observability** (§11): the spike in §11.5 comes first.
 
 ### Closed
 
@@ -849,6 +849,191 @@ None.
 
 ### Next steps, in order
 
-1. Comparing two players' achievements in a game needs no new route: the
-   UI asks `/achievements/:titleId` for each player. Each player's list is
-   one upstream call per hour while viewed.
+1. Observability, in the order of §11.6. Comparing two players was
+   deferred indefinitely on 2026-11-03 (UI `TODO.md`).
+
+## 11. Observability
+
+Drafted 2026-11-04. API first; the UI gets the same treatment afterwards,
+and the two meet at the request ID below. Nothing here is built yet: the
+decisions are settled, the failure-mode review in §11.4 is the proposal,
+and the spike in §11.5 settles what the decisions leave open.
+
+### 11.1 Constraints
+
+- **Workers Free, until it stops being viable.** 10 ms of CPU per request;
+  100,000 requests a day; 1,000 KV writes a day, already the cache's.
+  Nothing here may assume Workers Paid.
+- **Logs leave Cloudflare only through our own code.** Workers Logpush and
+  Tail Workers need Workers Paid (Cloudflare's docs, checked 2026-11-03);
+  OpenTelemetry export appears to as well, though no live Cloudflare page
+  said so outright. Workers Logs is the free home: until 2026-12-01, 200,000
+  events a day kept 3 days; from then, 0.5 GB a day kept 7 days, with
+  ingestion simply stopping at the cap until 00:00 UTC. Cloudflare records
+  an event for every invocation regardless of what we log, so a flood of
+  junk requests, not our own lines, is what could exhaust the allowance.
+- **A request killed for CPU cannot log itself.** Our code never runs to
+  the log call. `exceededCpu` exists only in Cloudflare's own invocation
+  data, so that signal has to be read from outside the request.
+- **Stateless Worker, no KV counters.** Anything that counts across
+  requests ("refusals are climbing") lives outside the request path.
+- **Monitoring spends no upstream calls.** The budget is read from the
+  headers of calls already being made, never fetched for its own sake.
+- **Personal data.** XUIDs and gamertags appear in upstream paths
+  (`/search/{gamertag}`) and cache keys; IPs arrive on every request. They
+  may stay in this account's Workers Logs. Anything bound elsewhere must
+  be able to drop them, so they travel as separate fields, never inside
+  message text. Real gamertags never appear in docs, tests or alert
+  configuration in the repo.
+- **One maintainer.** Nothing is critical enough to page anyone. Alerts
+  are an **end-of-day email summary, sent only when something
+  alert-worthy happened**; a quiet day sends nothing.
+
+### 11.2 Decisions
+
+- **Our own structured logging, independent of the destination.** We
+  don't assume logs end up in Cloudflare. A `Logger` interface of ours
+  (`debug`, `info`, `warn`, `error`, `with(fields)` for context) is all
+  the code sees. Underneath it sits **LogTape** (no dependencies, runs on
+  Workers, ready-made OpenTelemetry and Sentry sinks, a Hono adapter, a
+  testing sink, redaction), subject to the bundle and CPU check in §11.5.
+  If that check fails, the same interface gets a ~60-line implementation
+  of our own. Output is one JSON object per line.
+- **Levels.**
+
+  | Level | Holds | Production |
+  | :--- | :--- | :--- |
+  | `error` | Something failed that we should fix or that broke a response | on |
+  | `warn` | Degraded but handled: rate limits, stale data served, budget low | on |
+  | `info` | The detail behind a warn/error (trimmed upstream body, as its own event with the same request ID), and low-volume facts worth counting | on |
+  | `debug` | Cache hits and misses, timings, full upstream payloads | off |
+
+  Set by a `LOG_LEVEL` var: `info` in `wrangler.jsonc`, `debug` in
+  `.dev.vars`. Diagnostic detail never rides on the warn/error line
+  itself, so the headline events stay short and countable.
+- **One registry of events.** `src/log-events.ts` names every event the
+  code may emit (`upstream.budget_low`, `inbound.rate_limited`, ...); the
+  logger accepts only those names, enforced by type. Events that feed the
+  daily summary are marked there with what they alert on, and carry
+  `alert: true` in their output. A renamed or removed alerting event is
+  then a visible change in review, not a silently broken alert elsewhere.
+- **Logging rules, enforced in the wrapper:** never the API key; never a
+  raw IP (a salted hash if a per-client count is needed); upstream text
+  trimmed to a fixed length (200 characters); identifiers as fields.
+- **Correlation: a request ID of ours on every line.** Each request gets
+  `crypto.randomUUID()`, attached through `with()` together with
+  Cloudflare's ray ID (logged separately, for the dashboard and support),
+  the route pattern and the method. It is returned as `X-Request-Id` and
+  listed in `Access-Control-Expose-Headers`, so the UI records it against
+  its own logs for that call. The browser does **not** send its own ID
+  today: a custom request header turns our simple cross-origin GETs into
+  preflighted ones, and preflights are cached per URL, so almost every
+  call would gain a round trip and an extra Worker request. Server-to-
+  server callers (the UI's preview function over the service binding)
+  may send `X-Request-Id`; it is used only if it is a well-formed UUID,
+  otherwise replaced. Once the API is served from `xboxclips.io/api/*`
+  (§6), calls are same-origin and the browser can send its own ID or a
+  W3C `traceparent` without a preflight.
+- **Free plan.** Revisit only if a spike finding or real usage makes it
+  unworkable.
+
+### 11.3 Testing
+
+The logger is built with a sink the tests can read (LogTape's testing
+sink, or an in-memory one passed through `createApp`), so logs are
+asserted like any other output:
+
+- each alert-marked event is emitted in the scenario that should trigger
+  it (`FakeProvider` already simulates upstream statuses; it gains budget
+  headers and a 401);
+- the whole suite runs with a sentinel API key, and a final check
+  asserts it appears in no log record;
+- every record from one request carries the same request ID, and the
+  response's `X-Request-Id` matches it; a malformed inbound ID is
+  replaced;
+- no record carries a raw IP.
+
+### 11.4 Failure modes: today's logging, gaps and proposals
+
+Today the API logs from 16 call sites, at `warn` and `error` only, as free
+text with diagnostics appended to the same line. Successful requests log
+nothing of ours. Proposed events below; **Summary** marks what feeds the
+daily email (§11.1), with starting thresholds to tune after two weeks of
+real data.
+
+**Platform**
+
+| Failure | Today | Proposal | Summary |
+| :--- | :--- | :--- | :--- |
+| Request killed for CPU (`exceededCpu`) | Invisible to our code | Read from Cloudflare's invocation data (§11.5) | Any, by route |
+| Daily request cap (100,000) reached | Invisible; Cloudflare answers with its own error | Read the day's request count from Cloudflare's data | Over 70% of cap |
+| KV write fails (includes the 1,000-a-day quota running out, after which every request goes upstream) | `error` per failure, with the full cache key (a gamertag or XUID) | `cache.write_failed` `error`, key **prefix** only, the key itself as a separate field | Any |
+| KV read fails | `error` with full key | `cache.read_failed` `error`, as above | Any |
+| Unhandled exception (bug, binding failure) | `error` "unhandled error" with the error | `app.unhandled` `error` with message and stack | Any |
+| A response ends 5xx | Not logged as such: the cause may be | `request.failed` `warn` from the error handler, with the public code | Count, if any |
+
+**Upstream (OpenXBL)**
+
+| Failure | Today | Proposal | Summary |
+| :--- | :--- | :--- | :--- |
+| Every upstream call | Nothing | `upstream.call` `info`: endpoint pattern, status, duration, budget remaining. At most 150 an hour, so cheap, and it gives budget use, latency and error rate in one stream | Day's lowest remaining budget, and calls by endpoint, in every email sent |
+| Budget low (under 20 left this hour) | `warn` on every call while low | `upstream.budget_low` `warn`, once per hour it happens | Any |
+| Upstream 429 | `warn` | `upstream.rate_limited` `warn` | Any |
+| Key rejected (401, or 403 outside clips) | Lumped into a generic `error` with the body | `upstream.auth_failed` `error`: its own event, because it means the whole site is down until the key is fixed | Any, at the top of the email |
+| Upstream 5xx or other unexpected status | `error` with up to 500 characters of body | `upstream.error` `error` (endpoint, status) plus `upstream.error_body` `info` (trimmed body) | Over 5 in a day |
+| Upstream unreachable | `error` with the error | `upstream.unreachable` `error` | Over 5 in a day |
+| Body unreadable or not the expected shape (schema drift) | `error` on a failed parse; silent where a transform falls back to empty or null | `upstream.unexpected_shape` `error`, including at the fallbacks that are silent today (the Mythics tail parse, for one); the spike lists them all | Any |
+| Clips 403/404 that isn't "private" (the intermittent glitch, §6) | `warn` with 300 characters of body | `upstream.clips_transient` `warn` plus the body at `info` | Over 10 in a day |
+| Slow upstream | Nothing | Covered by `upstream.call` duration | Slowest endpoint, in any email sent |
+
+**Inbound**
+
+| Failure | Today | Proposal | Summary |
+| :--- | :--- | :--- | :--- |
+| Per-IP rate-limit refusal | Nothing | `inbound.rate_limited` `warn` with a hashed client ID | Over 50 in a day, with distinct clients |
+| Unknown gamertag (spends a search call) | Nothing | `player.not_found` `info`, kind (gamertag or XUID) only, not the value | Over 100 in a day, the signal for negative caching (TODO) |
+| Invalid identifier (400) | Nothing | `request.invalid` `info` | Only alongside other abuse signals |
+| Stale data served under pressure | `warn` with full key | `cache.stale_served` `info` with key prefix: it is the designed degradation, not a fault | Count, in any email sent |
+| Clip expired, not found, game not found | Nothing | `debug` only; normal outcomes | No |
+
+The two silent gaps that matter most are the rate-limit refusals and the
+unknown gamertags: both are the early signs of abuse that §6 says to watch
+for before locking the API down, and neither leaves a trace today.
+
+### 11.5 Spike, first in the work
+
+Short checks against Cloudflare's live docs and this account, each
+written back here with its answer before building on it.
+
+1. **Cloudflare's own alerting on the free plan.** Do the custom alerts
+   and SQL API announced with the December pricing (beta) run on Workers
+   Free, and can a query count `exceededCpu` outcomes and requests per
+   day? Decides where the summary's numbers come from.
+2. **Sending the daily email for free.** Front-runner: a Cron Trigger
+   (available on the free plan) on a small Worker that queries the day's
+   logs and sends through Email Routing's `send_email` binding to a
+   verified address on `xboxclips.io`. Alternatives: a scheduled GitHub
+   Actions workflow; a Cloudflare alert webhook. Decides the summary's
+   delivery.
+3. **Reading the day's events back.** Can that job query Workers Logs
+   (or the SQL API) for our JSON fields, so no separate metrics store is
+   needed? If not, does Workers Analytics Engine work on the free plan as
+   the counter store? Includes: does Workers Logs index fields from JSON
+   console output?
+4. **Volume.** Today's daily log volume against the 0.5 GB cap, and
+   whether sampling can keep every failure while sampling successes
+   (Workers Logs' head sampling is per request, so probably not).
+5. **LogTape in the Worker.** Bundle size with and without it, and CPU per
+   request after deploying it, against today's figures; configuring it
+   once per isolate; resetting it between tests.
+
+### 11.6 Order of work
+
+1. The spike (§11.5), findings recorded here.
+2. Logger, event registry, request ID and the tests in §11.3. No change
+   to behaviour beyond log format and the new response header.
+3. Move the 16 existing call sites onto events, and add the missing ones
+   from §11.4.
+4. The daily summary, per the spike's answers.
+5. Two weeks of real data; tune the thresholds. Then the UI's side,
+   recording `X-Request-Id` against its own logs.
