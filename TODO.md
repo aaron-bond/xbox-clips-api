@@ -5,16 +5,23 @@ any trade-off made.
 
 ## Open questions
 
-- [ ] **Career CPU for the heaviest players: risk accepted.** A 1,000-game
-      player's first `/career` request of the day measures 13-14 ms of CPU
-      against the free plan's 10 ms; no code change reduced it (PLAN §5). Watch
-      for `exceededCpu` outcomes; if they appear, move to Workers Paid.
+- [ ] **CPU on the free plan: risk accepted, needs watching.** A
+      1,000-game player's first `/career` request of the day measures 13-14 ms
+      of CPU against the free plan's 10 ms; no code change reduced it (PLAN
+      §5). A `/games` refresh has measured 20 ms. Watching for `exceededCpu`
+      outcomes is part of the observability plan below; if they appear, move
+      to Workers Paid.
 
-## Planned
+## Next
 
-- [ ] **Mythics** (PLAN §5, "Mythics"): `mythic` on recent games, and
-      `GET /players/:id/mythics`, cached 24 hours. Check CPU for a 1,000-game
-      player before relying on it.
+- [ ] **Observability, across the API and the UI.** Needs a proper plan of
+      attack before anything is built; the same item is in the UI's TODO.
+      Today Workers Logs keep a few days of logs and nothing alerts. The
+      plan should cover alerts on: CPU limit breaches (`exceededCpu`), the
+      upstream budget running low (`X-RateLimit-Remaining`), rate-limit
+      refusals, upstream error rates, and junk gamertag lookups. On the UI
+      side, browser errors and user agents reported to a monitoring service,
+      on a free tier if one fits. Several items below wait on this data.
 
 ## Later
 
@@ -24,14 +31,21 @@ any trade-off made.
       `xboxclips.io/api/*` with a `Sec-Fetch-Site` check, switch off
       `workers.dev`, turn on Bot Fight Mode.
 - [ ] Negative-cache unknown gamertags for a short time. Each junk lookup
-      currently spends a search call from the shared budget.
+      currently spends a search call from the shared budget. Decide once
+      observability shows how often it happens.
+- [ ] A failed Mythics read is not remembered, so the next visit tries the
+      slow upstream read again.
 - [ ] Pages after the first are not cached, so repeatedly resolving an old
       clip walks the pages each time (bounded at 5). Revisit if share links to
       old clips turn out to be common.
 - [ ] Surface `X-RateLimit-Remaining` somewhere visible (it is logged when
-      under 20).
+      under 20). Likely folded into the observability plan.
 
 ## Done
+
+- [x] **Mythics** (2026-11-01). `mythic` on recent games, and
+      `GET /players/:id/mythics`, cached 24 hours (PLAN §5, "Mythics").
+
 
 - [x] **Workers Logs turned on** (2026-10-23). Unexplained 502s on clips left
       no trace: the code logged the cause, but nothing kept the logs. Now kept
