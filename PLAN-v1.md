@@ -728,8 +728,8 @@ address stays up until phase 4, so the site never depends on a step that
 isn't proven.
 
 1. **Proxy, report-only (UI repo, one deploy).** Add the function in
-   `report` mode, set `VITE_API_BASE_URL` empty in `.env.production` so
-   the app calls `/api/...` on its own origin, and add the dev-server
+   `report` mode, point the app at `/api/...` on its own origin
+   (removing `VITE_API_BASE_URL`), and add the dev-server
    proxy (below). Ship to a branch first: the preview deployment is a
    full test. Check the site works, a clip plays and a clip link
    unfurls, then merge. Rollback: redeploy the previous deployment from
