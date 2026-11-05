@@ -54,6 +54,13 @@ response cache; the browser streams media straight from the Xbox CDN.
   `https://api.xbl.io/docs/json` (the docs page is client-rendered), or a
   single real response. Third-party OpenXBL client libraries are out of date
   and have been wrong about what the API can do.
+- **Commit locally freely; ask before every push.** A push to `main`
+  deploys, so list the commits that would go up (short hash and subject)
+  and wait for explicit approval each time.
+- **No real gamertags or XUIDs in the project**: not in code, tests, docs,
+  TODOs, PLAN or commit messages, and never in history. Use placeholders
+  such as `TestPlayer`. Real players must not be associated with the
+  project; check the diff and message before every commit.
 - **Checking a deploy:** `gh run list --workflow deploy.yml` shows the
   push's run. It typechecks and tests before deploying, so a red run means
   nothing changed live.
