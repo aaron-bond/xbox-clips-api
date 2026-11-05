@@ -54,6 +54,9 @@ response cache; the browser streams media straight from the Xbox CDN.
   `https://api.xbl.io/docs/json` (the docs page is client-rendered), or a
   single real response. Third-party OpenXBL client libraries are out of date
   and have been wrong about what the API can do.
+- **Checking a deploy:** `gh run list --workflow deploy.yml` shows the
+  push's run. It typechecks and tests before deploying, so a red run means
+  nothing changed live.
 - **Open items** are tracked in [TODO.md](TODO.md) and PLAN §10.
 
 ## Commands

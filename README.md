@@ -85,7 +85,11 @@ One-time setup:
    deploy.
 3. In the GitHub repository settings, add the secrets
    `CLOUDFLARE_API_TOKEN` (with Workers edit permission) and
-   `CLOUDFLARE_ACCOUNT_ID`.
+   `CLOUDFLARE_ACCOUNT_ID`. `gh secret set CLOUDFLARE_API_TOKEN` prompts
+   for the value. The token lives only there: local commands use
+   `npx wrangler login`, so keep no copy in `.dev.vars` (that's the Worker's
+   environment, not Wrangler's) or in `.claude/settings.local.json` (Claude
+   Code shows that file's contents in the conversation when it changes).
 4. Check `ALLOWED_ORIGINS` in `wrangler.jsonc` against the UI's origins.
    Entries are exact origins, or `https://*.host` for any subdomain of
    `host`.
