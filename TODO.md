@@ -14,13 +14,12 @@ any trade-off made.
 
 ## Next
 
-- [ ] **Lock the API to the site** (PLAN §6, "Locking the API to the
-      site"). Brought forward 2026-11-05. Phased so the site never goes
-      down: the UI's Pages Function proxies `/api/*` in report-only mode,
-      then enforces; old tabs drain off `workers.dev`; then this repo
-      sets `workers_dev` and `preview_urls` to false and drops the
-      localhost origin; then Bot Fight Mode and a WAF rate rule, one at a
-      time. Turnstile only if abuse continues.
+- [ ] **Lock the API to the site: phases 3-5** (PLAN §6, "Locking the
+      API to the site"). Phases 1 and 2 done (below). Next: watch site
+      traffic on the `workers.dev` host drain away, then set
+      `workers_dev` and `preview_urls` to false and drop the localhost
+      origin; then Bot Fight Mode and a WAF rate rule, one at a time.
+      Turnstile only if abuse continues.
 - [ ] **Upstream-miss limit** (PLAN §6). A second Rate Limiting binding
       per IP, checked only before an upstream call; plus tighter limits
       on `/career`, `/achievements` and `/nearest-completion`. Tune with
@@ -50,6 +49,14 @@ any trade-off made.
       under 20). Likely folded into the observability plan.
 
 ## Done
+
+- [x] **API served through the site, enforced** (2026-11-05, PLAN §6
+      phases 1 and 2). The UI's Pages Function serves `xboxclips.io/api/*`
+      over the service binding and refuses cross-site requests with
+      `403`. This Worker logs `site guard would refuse` for requests the
+      function marks while in `report` mode.
+      Trade-off: enforced the same day rather than after a day or two of
+      report-only logs; failures, if reported, are handled then.
 
 - [x] **Mythics** (2026-11-01). `mythic` on recent games, and
       `GET /players/:id/mythics`, cached 24 hours (PLAN §5, "Mythics").

@@ -723,6 +723,10 @@ change.
 
 #### Rollout
 
+**Status:** phases 1 and 2 done 2026-11-05. Phase 2 followed phase 1 the
+same day instead of after the report-only soak, by decision: if visitors
+report failures, they are handled then.
+
 Each phase ships alone and can be undone in minutes; the `workers.dev`
 address stays up until phase 4, so the site never depends on a step that
 isn't proven.
@@ -922,7 +926,7 @@ working backlog; `CLAUDE.md` is the map of the code.
 ### Open
 
 - **Locking the API to the site** (§6): brought forward 2026-11-05;
-  phases 1-4 of the rollout first.
+  phases 1 and 2 done the same day, phase 3 under way.
 - **Observability** (§11): the spike in §11.5 comes first.
 
 ### Closed
