@@ -14,6 +14,17 @@ any trade-off made.
 
 ## Next
 
+- [ ] **Lock the API to the site** (PLAN §6, "Locking the API to the
+      site"). Brought forward 2026-11-05. Phased so the site never goes
+      down: the UI's Pages Function proxies `/api/*` in report-only mode,
+      then enforces; old tabs drain off `workers.dev`; then this repo
+      sets `workers_dev` and `preview_urls` to false and drops the
+      localhost origin; then Bot Fight Mode and a WAF rate rule, one at a
+      time. Turnstile only if abuse continues.
+- [ ] **Upstream-miss limit** (PLAN §6). A second Rate Limiting binding
+      per IP, checked only before an upstream call; plus tighter limits
+      on `/career`, `/achievements` and `/nearest-completion`. Tune with
+      real refusals.
 - [ ] **Observability, across the API and the UI.** API plan in PLAN §11;
       start with its spike (§11.5). The same item is in the UI's TODO.
       Today Workers Logs keep a few days of logs and nothing alerts. The
@@ -25,14 +36,11 @@ any trade-off made.
 
 ## Later
 
-- [ ] **Lock the API to the site, if abuse appears** (PLAN §6, "Locking the
-      API to the site"). Signs: upstream budget running low, rate-limit
-      refusals climbing in Workers Logs. Then: proxy through
-      `xboxclips.io/api/*` with a `Sec-Fetch-Site` check, switch off
-      `workers.dev`, turn on Bot Fight Mode.
 - [ ] Negative-cache unknown gamertags for a short time. Each junk lookup
       currently spends a search call from the shared budget. Decide once
-      observability shows how often it happens.
+      observability shows how often it happens. Each entry is a KV write,
+      so a script feeding junk names could spend the day's 1,000 writes
+      (PLAN §6).
 - [ ] A failed Mythics read is not remembered, so the next visit tries the
       slow upstream read again.
 - [ ] Pages after the first are not cached, so repeatedly resolving an old

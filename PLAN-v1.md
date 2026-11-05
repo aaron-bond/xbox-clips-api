@@ -655,50 +655,139 @@ Cloudflare's native Rate Limiting binding, per IP, protects the shared
 upstream budget from a single abusive client. Deliberately not
 KV-based: per-request counters would burn the daily write quota (§4).
 
-### Locking the API to the site: deferred until abuse is seen
+### Locking the API to the site
 
 No public browser app's API can be made to answer only its own front end:
 anything a browser sends, a script can send too. CSRF tokens don't apply
 either, since the API has no logins, cookies or writes. What is worth
 protecting is the shared upstream budget, so the aim is to make scripted
-use costly and visible. Today that rests on the CORS allow-list (which
-stops other sites' pages, not scripts), the per-IP limit above, and the
-cache.
+use costly and visible. Today that rests on the CORS allow-list, the
+per-IP limit above, and the cache.
 
-**Decided 2026-10-23: leave it as is unless abuse shows up**, for
-example the upstream budget running low, rate-limit refusals climbing in
-Workers Logs, or one client making unusual numbers of lookups. If it does,
-in this order:
+**Decided 2026-10-23 to wait for abuse; brought forward 2026-11-05.**
+CORS protects less than it seems. It decides whether another site's page
+may *read* a response, not whether the request is sent, so a simple GET
+from a hostile page still reaches the Worker and can spend budget, spread
+across its visitors' IPs where the per-IP limit never trips. And the
+per-IP limit (60 a minute, about 3,600 an hour) is far looser than the
+upstream budget (150 an hour): one IP looking up distinct gamertags can
+drain the hour in minutes, cache or no cache.
 
-1. **Serve the API through the UI's own domain** (the UI repo's part):
-   a Pages Function at `xboxclips.io/api/*` forwards to this Worker over
-   the existing `API` service binding. The Worker still sees the
-   visitor's IP as `CF-Connecting-IP` over the binding (§10), so the
-   per-IP limit keeps working. That function also checks the browser's
-   `Sec-Fetch-Site` header (`same-origin` or `same-site`, falling back to
-   an allowed `Referer` for older browsers) and refuses anything else
-   with `403`. The UI then calls `/api/...` on its own origin. Verify:
-   the site works, `curl https://xboxclips.io/api/v1/games/most-played`
-   returns `403`, and clip link previews still unfurl.
-2. **Switch off this Worker's public address**: `"workers_dev": false`
-   and `"preview_urls": false` in `wrangler.jsonc`. Only after step 1 is
-   live, or the site breaks. The service binding becomes the only way
-   in; link previews already use it.
-3. **Cloudflare's zone protections** for `xboxclips.io`, which now cover
-   API traffic, in the dashboard: Security → Bots → Bot Fight Mode on
-   (verified crawlers such as Discord's and WhatsApp's link previewers
-   are exempt; re-test a clip link afterwards), and optionally a rate
-   limiting rule on URI path starting `/api/` (per IP, 50 requests per
-   10 seconds, block for 10 seconds).
-4. **If abuse continues:** Cloudflare Turnstile (an invisible check that
-   a real browser is present, rewarded with a short-lived signed cookie
-   the API requires), and lower per-IP limits on the expensive routes
-   (`/career`, `/achievements`).
+**What each measure does.**
 
-Costs once in place: each API call is also a Pages Function request
-(both count toward the free 100,000 Worker requests a day), one extra hop
-inside Cloudflare, and visitors whose browsers send neither
-`Sec-Fetch-Site` nor `Referer` are refused.
+- **The same-origin check** stops other sites using their visitors'
+  browsers: browsers set `Sec-Fetch-Site` themselves and page scripts
+  cannot change it. It does not stop scripts, which can send any header
+  (`curl -H 'Sec-Fetch-Site: same-origin'` gets through).
+- **Closing `workers.dev`** puts every API request behind the
+  `xboxclips.io` zone, which is where the protections that do slow
+  scripts (Bot Fight Mode, WAF rules, Turnstile) apply. This, not the
+  header check, is the main reason for the proxy.
+- **The upstream-miss limit** bounds what one IP can spend upstream,
+  however it gets in.
+- **Turnstile** is the only measure that ties a request to a real browser
+  that loaded the site. Held back until abuse continues after the rest.
+
+**Costs.** All on the free plan: Bot Fight Mode, one WAF rate limiting
+rule (10-second window), Turnstile and a second Rate Limiting binding.
+Each API call also becomes a Pages Function request (both count toward
+the free 100,000 Worker requests a day), with one extra hop inside
+Cloudflare. Visitors whose browsers send neither `Sec-Fetch-Site` nor
+`Referer` are refused; every current browser sends the first.
+
+#### The UI's Pages Function
+
+`functions/api/[[path]].ts` in the UI repo serves `xboxclips.io/api/*`
+(and the same path on every Pages preview) by forwarding the request to
+this Worker over the existing `API` service binding. The Worker still
+sees the visitor's IP as `CF-Connecting-IP` over the binding (§10), so
+the per-IP limits keep working. A request passes only if:
+
+1. `Sec-Fetch-Site` is `same-origin`. Not `same-site`: nothing on another
+   subdomain calls the API, and on `pages.dev` (a public suffix) every
+   other Pages project would count as cross-site anyway.
+2. If `Sec-Fetch-Site` is absent (older browsers), the `Referer`'s origin
+   is the request's own origin.
+3. If `Origin` is present, it is the request's own origin. Browsers don't
+   send `Origin` on same-origin GETs, so this only catches the odd case.
+
+Comparing with the request's own origin rather than a list means
+production, the Pages hostname and every preview work with no
+configuration. Anything else gets `403` with the error envelope (§6).
+
+The function has a mode, from a Pages environment variable:
+`report` forwards everything and marks requests it would refuse with a
+header the Worker logs (Workers Logs keep them; Pages Functions keep
+none); `enforce` refuses them. Changing it takes a redeploy, not a code
+change.
+
+#### Rollout
+
+Each phase ships alone and can be undone in minutes; the `workers.dev`
+address stays up until phase 4, so the site never depends on a step that
+isn't proven.
+
+1. **Proxy, report-only (UI repo, one deploy).** Add the function in
+   `report` mode, set `VITE_API_BASE_URL` empty in `.env.production` so
+   the app calls `/api/...` on its own origin, and add the dev-server
+   proxy (below). Ship to a branch first: the preview deployment is a
+   full test. Check the site works, a clip plays and a clip link
+   unfurls, then merge. Rollback: redeploy the previous deployment from
+   the Pages dashboard; that bundle still calls `workers.dev`.
+2. **Enforce.** After a day or two of report-only logs showing no real
+   visitor would be refused, switch to `enforce`. Check: the site works;
+   `curl https://xboxclips.io/api/v1/games/most-played` gets `403`.
+   Rollback: back to `report`.
+3. **Let old tabs drain.** New page loads get the new bundle at once;
+   tabs opened before phase 1 keep calling `workers.dev` until reloaded.
+   Watch Workers Logs for requests on the `workers.dev` host (proxied
+   ones arrive with `xboxclips.io` or a `pages.dev` host) until those
+   from the site's origins stop. A few days.
+4. **Close the public address (this repo).** `"workers_dev": false` and
+   `"preview_urls": false` in `wrangler.jsonc`, deployed through CI; drop
+   `http://localhost:5173` from `ALLOWED_ORIGINS`. The CORS allow-list
+   stays as a backstop; it no longer does anything for same-origin calls.
+   Rollback: set both back to `true` and redeploy; the address returns
+   unchanged.
+5. **Zone protections, one at a time, in the dashboard.** Security →
+   Bots → Bot Fight Mode on; verified crawlers such as Discord's and
+   WhatsApp's link previewers are exempt, so re-test a clip link
+   straight after. Then a rate limiting rule on URI path starting `/api/`
+   (per IP, 50 requests per 10 seconds, block for 10 seconds). Each is a
+   toggle, undone instantly.
+6. **If abuse continues:** Turnstile, with a short-lived signed cookie
+   the API requires.
+
+**Independently, at any time (this repo):**
+
+- **An upstream-miss limit.** A second Rate Limiting binding, keyed on
+  the client IP and checked only when a request is about to call upstream
+  (a cache miss or a refresh), so cached traffic never counts. No KV:
+  the binding keeps its own counters. Its window can only be 10 or 60
+  seconds, so it slows one client rather than capping it below the
+  hourly budget: 5 a minute is still 300 an hour. Start around there,
+  then tune with real refusals. Refused requests get stale data where
+  the cache has it (§5), otherwise `429 RATE_LIMITED`.
+- **Tighter per-IP limits on the expensive routes** (`/career`,
+  `/achievements`, `/nearest-completion`), tuned the same way.
+
+Negative-caching unknown gamertags stays in `TODO.md`: each junk name
+would cost a KV write, and a script feeding junk names could spend the
+free plan's 1,000 writes a day, starving real cache writes.
+
+#### Local development
+
+Once the UI calls `/api/...`, its Vite dev server forwards `/api` to
+`https://xboxclips.io`, so local development is same-origin like
+production and keeps using the production cache. This opens nothing
+new: the proxy forwards the browser's own `Sec-Fetch-Site`, so a hostile
+page calling `localhost:5173/api` is still refused, and dev traffic gets
+the same limits as anyone else. It is the header's spoofability used on
+purpose. Bot Fight Mode (phase 5) will probably challenge the proxy's
+requests, which come from Node rather than a browser, and the free plan
+can't exempt a path. Test local development straight after phase 5; if
+it breaks, the fallback is a local API (`npm run dev` here, with a
+`.dev.vars` key), which spends the shared budget on cache misses.
 
 ---
 
@@ -832,6 +921,8 @@ working backlog; `CLAUDE.md` is the map of the code.
 
 ### Open
 
+- **Locking the API to the site** (§6): brought forward 2026-11-05;
+  phases 1-4 of the rollout first.
 - **Observability** (§11): the spike in §11.5 comes first.
 
 ### Closed
@@ -849,7 +940,10 @@ working backlog; `CLAUDE.md` is the map of the code.
 
 ### Next steps, in order
 
-1. Observability, in the order of §11.6. Comparing two players was
+1. Locking the API to the site, phases 1-4 of the rollout in §6, and
+   the upstream-miss limit. Phase 3's watch uses Workers Logs as they
+   are, so it doesn't wait on observability.
+2. Observability, in the order of §11.6. Comparing two players was
    deferred indefinitely on 2026-11-03 (UI `TODO.md`).
 
 ## 11. Observability
