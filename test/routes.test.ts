@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app';
 import type { ClipPage } from '../src/domain';
 import type { AppEnv } from '../src/env';
@@ -94,6 +94,16 @@ describe('basics', () => {
     expect(res.status).toBe(429);
     expect(await errorCode(res)).toBe('RATE_LIMITED');
     expect(res.headers.get('retry-after')).toBe('60');
+  });
+
+  it('logs requests the site guard would refuse, and still serves them', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { get, provider } = setup();
+    provider.mostPlayed = [];
+    const res = await get('/api/v1/games/most-played', { 'X-Site-Guard': 'sec-fetch-site:cross-site' });
+    expect(res.status).toBe(200);
+    expect(warn).toHaveBeenCalledWith('site guard would refuse (sec-fetch-site:cross-site): GET /api/v1/games/most-played');
+    warn.mockRestore();
   });
 });
 

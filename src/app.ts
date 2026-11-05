@@ -38,6 +38,14 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
   };
   app.use('/api/*', rateLimit);
 
+  // While the UI's API proxy only reports, it marks the requests it would refuse
+  // (PLAN-v1.md §6, "Locking the API to the site"). Logged here: Pages keeps no logs.
+  app.use('/api/*', async (c, next) => {
+    const guard = c.req.header('x-site-guard');
+    if (guard) console.warn(`site guard would refuse (${guard.slice(0, 40)}): ${c.req.method} ${c.req.path}`);
+    await next();
+  });
+
   app.get('/health', (c) => c.json({ status: 'ok' }));
 
   app.get('/api/v1/players/:identifier', async (c) => {
