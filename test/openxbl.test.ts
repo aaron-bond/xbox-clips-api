@@ -262,7 +262,7 @@ describe('OpenXblProvider logging', () => {
   it('logs every call by endpoint name, status, budget and time, never the identifier', async () => {
     await new OpenXblProvider(fakeFetch(200, accountResponse, { 'x-ratelimit-remaining': '140' })).getProfile(call, XUID);
     expect(records).toEqual([
-      { event: 'upstream.call', level: 'info', method: 'GET', endpoint: 'account', status: 200, remaining: 140, ms: expect.any(Number) },
+      { event: 'upstream.call', level: 'info', message: 'upstream.call', method: 'GET', endpoint: 'account', status: 200, remaining: 140, ms: expect.any(Number) },
     ]);
     expect(JSON.stringify(records)).not.toContain(XUID);
   });
@@ -274,7 +274,7 @@ describe('OpenXblProvider logging', () => {
 
   it('warns while the hourly budget is nearly spent', async () => {
     await new OpenXblProvider(fakeFetch(200, accountResponse, { 'x-ratelimit-remaining': '19' })).getProfile(call, XUID);
-    expect(records[1]).toEqual({ event: 'upstream.budget_low', level: 'warn', alert: true, remaining: 19 });
+    expect(records[1]).toEqual({ event: 'upstream.budget_low', level: 'warn', message: 'upstream.budget_low', alert: true, remaining: 19 });
   });
 
   it.each([

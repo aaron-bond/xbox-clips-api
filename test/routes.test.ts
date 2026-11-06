@@ -108,7 +108,7 @@ describe('basics', () => {
     const res = await get('/api/v1/games/most-played', { 'X-Site-Guard': 'sec-fetch-site:cross-site', 'CF-Connecting-IP': '203.0.113.7' });
     expect(res.status).toBe(200);
     expect(records.filter((r) => r.event.startsWith('inbound.'))).toEqual([
-      { event: 'inbound.site_guard_would_refuse', level: 'warn', reason: 'sec-fetch-site:cross-site', method: 'GET', path: '/api/v1/games/most-played' },
+      { event: 'inbound.site_guard_would_refuse', level: 'warn', message: 'inbound.site_guard_would_refuse', reason: 'sec-fetch-site:cross-site', method: 'GET', path: '/api/v1/games/most-played' },
     ]);
     expect(JSON.stringify(records)).not.toContain('203.0.113.7');
   });
@@ -123,7 +123,7 @@ describe('logging', () => {
     expect(await res.text()).not.toContain('boom');
     expect(records.map((r) => r.event)).toEqual(['app.unhandled', 'request.failed']);
     expect(records[1]).toMatchObject({ code: 'INTERNAL_ERROR', status: 500 });
-    expect(records[0]).toMatchObject({ event: 'app.unhandled', level: 'error', alert: true, method: 'GET', path: '/api/v1/games/most-played' });
+    expect(records[0]).toMatchObject({ event: 'app.unhandled', level: 'error', message: 'app.unhandled', alert: true, method: 'GET', path: '/api/v1/games/most-played' });
     expect(records[0]!.error).toMatchObject({ name: 'TypeError', message: 'boom while calling with [secret]' });
     expect((records[0]!.error as { stack?: string }).stack).toBeTypeOf('string');
     expect(JSON.stringify(records)).not.toContain(SENTINEL_KEY);
@@ -133,7 +133,7 @@ describe('logging', () => {
     const { get, provider, records } = setup();
     provider.mostPlayed = [];
     await get('/api/v1/games/most-played');
-    expect(records).toEqual([{ event: 'cache.written', level: 'info', alert: true, prefix: 'games' }]);
+    expect(records).toEqual([{ event: 'cache.written', level: 'info', message: 'cache.written', alert: true, prefix: 'games' }]);
     records.length = 0;
     await get('/api/v1/games/most-played');
     expect(records).toEqual([]);
@@ -144,14 +144,14 @@ describe('logging', () => {
     const refuse = { limit: async () => ({ success: false }) } as unknown as RateLimit;
     const res = await get('/api/v1/games/most-played', { 'CF-Connecting-IP': '203.0.113.7' }, { RATE_LIMITER: refuse });
     expect(res.status).toBe(429);
-    expect(records[0]).toMatchObject({ event: 'inbound.rate_limited', level: 'warn', alert: true, path: '/api/v1/games/most-played' });
+    expect(records[0]).toMatchObject({ event: 'inbound.rate_limited', level: 'warn', message: 'inbound.rate_limited', alert: true, path: '/api/v1/games/most-played' });
     expect(JSON.stringify(records)).not.toContain('203.0.113.7');
   });
 
   it('logs an unknown gamertag by kind only, and an invalid identifier', async () => {
     const { get, records } = setup();
     expect((await get('/api/v1/players/NoSuchPlayer')).status).toBe(404);
-    expect(records.find((r) => r.event === 'player.not_found')).toEqual({ event: 'player.not_found', level: 'info', alert: true, kind: 'gamertag' });
+    expect(records.find((r) => r.event === 'player.not_found')).toEqual({ event: 'player.not_found', level: 'info', message: 'player.not_found', alert: true, kind: 'gamertag' });
     expect((await get('/api/v1/players/bad!!name')).status).toBe(400);
     expect(records.map((r) => r.event)).toContain('request.invalid');
   });
@@ -161,7 +161,7 @@ describe('logging', () => {
     provider.mostPlayed = [];
     const broken = { ...env.CACHE, get: async () => null, put: async () => Promise.reject(new Error('quota')) } as unknown as KVNamespace;
     expect((await get('/api/v1/games/most-played', {}, { CACHE: broken })).status).toBe(200);
-    expect(records).toMatchObject([{ event: 'cache.write_failed', level: 'error', alert: true, prefix: 'games', error: { message: 'quota' } }]);
+    expect(records).toMatchObject([{ event: 'cache.write_failed', level: 'error', message: 'cache.write_failed', alert: true, prefix: 'games', error: { message: 'quota' } }]);
   });
 });
 

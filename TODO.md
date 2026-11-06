@@ -28,10 +28,10 @@ any trade-off made.
       dropped 2026-11-06. Alerting by Cloudflare's own monitors on
       Workers Logs, emailed at most daily per kind of problem; no
       summary Worker. Logger, event registry and every
-      call site done (§11.6 steps 2-3). Next: once deployed, check
-      whether monitors can filter on logged fields, then create the
-      monitors from the registry's alert-marked events. Watches CPU
-      (`CpuTimeMs`), KV writes per day, the upstream budget, rate-limit
+      call site done (§11.6 steps 2-3). Logged fields are filterable
+      (§11.2). Next: create the monitors from the registry's
+      alert-marked events, plus `exceededCpu`. Watches CPU
+      (`exceededCpu` outcomes), KV writes per day, the upstream budget, rate-limit
       refusals and junk gamertag lookups. Several items below wait on
       this data.
 

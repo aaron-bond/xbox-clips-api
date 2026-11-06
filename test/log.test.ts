@@ -8,13 +8,19 @@ function capture(level: Parameters<typeof createLogger>[0]['level'], secrets: st
 }
 
 describe('createLogger', () => {
+  it('repeats the event name as the message, for the Workers Logs list view', () => {
+    const { records, log } = capture('info');
+    log.emit('request.invalid', { path: '/x' });
+    expect(records[0]!.message).toBe('request.invalid');
+  });
+
   it("takes the level from the registry and marks alerting events", () => {
     const { records, log } = capture('debug');
     log.emit('upstream.budget_low', { remaining: 12 });
     log.emit('upstream.call', { endpoint: '/account/{xuid}', status: 200 });
     expect(records).toEqual([
-      { event: 'upstream.budget_low', level: 'warn', alert: true, remaining: 12 },
-      { event: 'upstream.call', level: 'info', endpoint: '/account/{xuid}', status: 200 },
+      { event: 'upstream.budget_low', level: 'warn', message: 'upstream.budget_low', alert: true, remaining: 12 },
+      { event: 'upstream.call', level: 'info', message: 'upstream.call', endpoint: '/account/{xuid}', status: 200 },
     ]);
   });
 
@@ -27,11 +33,11 @@ describe('createLogger', () => {
     expect(records.map((r) => r.event)).toEqual(['upstream.rate_limited', 'app.unhandled']);
   });
 
-  it('adds context from with(), letting a record override it, but never event, level or alert', () => {
+  it('adds context from with(), letting a record override it, but never event, level, message or alert', () => {
     const { records, log } = capture('info');
     const child = log.with({ route: '/a', endpoint: 'x' });
-    child.with({ method: 'GET' }).emit('upstream.call', { endpoint: 'y', event: 'forged', level: 'debug', alert: false });
-    expect(records).toEqual([{ event: 'upstream.call', level: 'info', route: '/a', endpoint: 'y', method: 'GET' }]);
+    child.with({ method: 'GET' }).emit('upstream.call', { endpoint: 'y', event: 'forged', level: 'debug', message: 'forged', alert: false });
+    expect(records).toEqual([{ event: 'upstream.call', level: 'info', message: 'upstream.call', route: '/a', endpoint: 'y', method: 'GET' }]);
   });
 
   it('scrubs secrets from every string, nested values and errors included', () => {
@@ -59,14 +65,14 @@ describe('createLogger', () => {
   it('leaves numbers, booleans and null alone and drops undefined', () => {
     const { records, log } = capture('info');
     log.emit('upstream.call', { status: 429, cached: false, remaining: null, retryAfter: undefined });
-    expect(records[0]).toEqual({ event: 'upstream.call', level: 'info', status: 429, cached: false, remaining: null });
+    expect(records[0]).toEqual({ event: 'upstream.call', level: 'info', message: 'upstream.call', status: 429, cached: false, remaining: null });
   });
 });
 
 describe('consoleSink', () => {
   it('writes the record object through the console method for its level', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const record = { event: 'upstream.rate_limited', level: 'warn', alert: true } as const;
+    const record = { event: 'upstream.rate_limited', level: 'warn', message: 'upstream.rate_limited', alert: true } as const;
     consoleSink(record);
     expect(warn).toHaveBeenCalledWith(record);
     warn.mockRestore();

@@ -12,6 +12,8 @@ export type Fields = Record<string, unknown>;
 export interface LogRecord {
   event: EventName;
   level: Level;
+  /** The event name again: Workers Logs shows `message` in its list view. Never holds identifiers. */
+  message: EventName;
   alert?: true;
   [field: string]: unknown;
 }
@@ -70,11 +72,11 @@ export function createLogger({ level, sink = consoleSink, secrets = [] }: Logger
     emit(event, fields = {}) {
       const spec = EVENTS[event];
       if (RANK[spec.level] < RANK[level]) return;
-      const record: LogRecord = { event, level: spec.level };
+      const record: LogRecord = { event, level: spec.level, message: event };
       if ('alert' in spec) record.alert = true;
       const withStack = event === 'app.unhandled';
       for (const [key, value] of Object.entries({ ...context, ...fields })) {
-        if (value === undefined || key === 'event' || key === 'level' || key === 'alert') continue;
+        if (value === undefined || key === 'event' || key === 'level' || key === 'message' || key === 'alert') continue;
         record[key] = clean(value, withStack);
       }
       sink(record);

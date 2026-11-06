@@ -995,7 +995,8 @@ side was dropped the same day as not worth it yet.
   of what we log, so a flood of junk requests, not our own lines, is what
   could exhaust the allowance.
 - **A request killed for CPU cannot log itself.** That signal comes from
-  Cloudflare's own invocation data (`CpuTimeMs`), not from our code.
+  Cloudflare's own record of the request (`$workers.outcome`), not from
+  our code.
 - **Monitoring spends no upstream calls.** The budget is read from the
   headers of calls already being made, never fetched for its own sake.
 - **Personal data.** XUIDs and gamertags appear in upstream paths and
@@ -1016,17 +1017,24 @@ threshold, departs from its baseline, or breaks an SLO. Workers Logs is
 a dataset (`logs.workersLogs`). Confirmed on this account (Free) on
 2026-11-06: a threshold monitor can be created on it, and the
 configuration screen shows our logs, including `CpuTimeMs` per
-invocation. No `exceededCpu` outcome was visible there.
+invocation.
 
 Each alert-worthy event gets its own monitor: a 24-hour evaluation
 window, checked hourly, repeating a notification at most every 24
 hours, emailing the maintainer. Not one combined digest, but nothing to
 build, host or keep within its own limits.
 
-Still open, to check once the first structured lines are deployed:
-whether fields of a logged JSON object are queryable as columns, so a
-monitor can filter on `event`. If not, monitors match the event name in
-the message text, which the logger keeps unique.
+**Our fields are columns.** Seen 2026-11-06 on the first structured
+record: a logged object's keys arrive as top-level fields (`event`,
+`path`, ...) beside Cloudflare's `$workers` and `$metadata`, so a monitor
+filters on `event`. The list view shows `$metadata.message`, so each
+record repeats its event name as `message`. A request's own record
+(`type: cf-worker-event`) is separate from ours (`cf-worker`), joined by
+`$metadata.requestId`; it carries `$workers.outcome` (`ok`, or
+`exceededCpu` for a request killed for CPU) and `$workers.cpuTimeMs`.
+A 400 that did almost no work measured 7 ms of CPU just after a deploy,
+so a CPU monitor counts `outcome = 'exceededCpu'` rather than a
+`cpuTimeMs` threshold, which cold starts would trip.
 
 Sources: Cloudflare's "8 major updates to Cloudflare Observability"
 (2026), and the Monitors and SQL API datasets pages of its docs.
@@ -1094,7 +1102,7 @@ alerting on.
 
 | Failure | Today | Proposal | Monitor |
 | :--- | :--- | :--- | :--- |
-| Request near or over the CPU limit | Invisible to our code | Nothing to log: Cloudflare's invocation data has `CpuTimeMs` (§11.2) | Any invocation at 10 ms or more |
+| Request killed for CPU | Invisible to our code | Nothing to log: Cloudflare's own record has `$workers.outcome` (§11.2) | Any `exceededCpu` |
 | Daily request cap (100,000) reached | Invisible; Cloudflare answers with its own error | Nothing to log: count invocations in Workers Logs | Over 70,000 in a day |
 | KV writes nearing the daily 1,000 | Invisible until writes fail | `cache.written` `info` with the key prefix (about 100 a day now, so cheap); or KV's own metrics, if a monitor dataset has them | Over 700 in a day |
 | KV write fails (includes the 1,000-a-day quota running out, after which every request goes upstream) | `error` per failure, with the full cache key (a gamertag or XUID) | `cache.write_failed` `error`, key **prefix** only, the key itself as a separate field | Any |
