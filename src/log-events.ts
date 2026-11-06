@@ -1,8 +1,8 @@
 /**
  * Every event the code may log, with its level fixed here (PLAN-v1.md §11.3).
  * An event with `alert` has a Cloudflare monitor behind it (§11.2), which finds
- * it by name: renaming or removing one breaks that monitor, so change the
- * monitor in the same change. `alert` says what the monitor fires on.
+ * it by its message, the event name: renaming or removing one breaks that
+ * monitor, so change the monitor in the same change. `alert` says what the monitor fires on.
  */
 export type Level = 'debug' | 'info' | 'warn' | 'error';
 

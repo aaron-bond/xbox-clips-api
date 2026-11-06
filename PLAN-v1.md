@@ -1019,6 +1019,12 @@ a dataset (`logs.workersLogs`). Confirmed on this account (Free) on
 configuration screen shows our logs, including `CpuTimeMs` per
 invocation.
 
+**Monitors in place:**
+
+| Monitor | Matches | Fires | Window, interval, repeat |
+| :--- | :--- | :--- | :--- |
+| Upstream budget low | message `upstream.budget_low` | count > 0 | 1 hour, every 15 minutes, 24 hours |
+
 Each alert-worthy event gets its own monitor: a 24-hour evaluation
 window, checked hourly, repeating a notification at most every 24
 hours, emailing the maintainer. Not one combined digest, but nothing to
@@ -1026,9 +1032,11 @@ build, host or keep within its own limits.
 
 **Our fields are columns.** Seen 2026-11-06 on the first structured
 record: a logged object's keys arrive as top-level fields (`event`,
-`path`, ...) beside Cloudflare's `$workers` and `$metadata`, so a monitor
-filters on `event`. The list view shows `$metadata.message`, so each
-record repeats its event name as `message`. A request's own record
+`path`, ...) beside Cloudflare's `$workers` and `$metadata`. The
+monitor builder doesn't offer them, though: it lists Cloudflare's own
+fields. So each record repeats its event name as `message`, which
+surfaces as `$metadata.message`, and **monitors match on the message**.
+A test pins `message` to the event name; never put anything else in it. A request's own record
 (`type: cf-worker-event`) is separate from ours (`cf-worker`), joined by
 `$metadata.requestId`; it carries `$workers.outcome` (`ok`, or
 `exceededCpu` for a request killed for CPU) and `$workers.cpuTimeMs`.
