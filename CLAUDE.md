@@ -24,6 +24,7 @@ response cache; the browser streams media straight from the Xbox CDN.
 | `src/domain.ts` | Domain types. Nothing outside `src/provider/` sees raw payloads. |
 | `src/origins.ts` | CORS allow-list matching, including `https://*.host` wildcards. |
 | `src/validation.ts`, `src/errors.ts` | Input validation; public error codes. |
+| `src/log.ts`, `src/log-events.ts` | Structured logger; the registry of events, their levels and which ones alert (PLAN §11). |
 | `test/` | Vitest in the Workers runtime. `FakeProvider` replaces upstream. |
 
 ## Invariants
@@ -42,6 +43,10 @@ response cache; the browser streams media straight from the Xbox CDN.
 - **Validate every identifier** before it reaches a cache key or URL.
 - **Gamertag search is fuzzy.** Only an exact (case-insensitive) match counts;
   never take the first result.
+- **Log through the registry.** Every record is a named event from
+  `src/log-events.ts`; no new raw `console` calls (those left in the cache
+  and provider move in PLAN §11.6 step 3), and never a raw IP. An event
+  with `alert` has a Cloudflare monitor that finds it by name.
 - **Encode KV values exactly once.** `JSON.stringify` on put, `get(key, 'json')`
   on read.
 

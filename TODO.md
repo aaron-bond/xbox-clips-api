@@ -27,8 +27,9 @@ any trade-off made.
 - [ ] **Observability** (PLAN §11). API only: the UI's side was
       dropped 2026-11-06. Alerting by Cloudflare's own monitors on
       Workers Logs, emailed at most daily per kind of problem; no
-      summary Worker. Next: the logger and event registry (§11.6 step
-      2), then the remaining call sites, then the monitors. Watches CPU
+      summary Worker. Logger and event registry built
+      (§11.6 step 2). Next: the remaining call sites, then the
+      monitors. Watches CPU
       (`CpuTimeMs`), KV writes per day, the upstream budget, rate-limit
       refusals and junk gamertag lookups. Several items below wait on
       this data.

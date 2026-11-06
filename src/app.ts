@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { Cache } from './cache';
 import type { AppEnv } from './env';
 import { AppError } from './errors';
+import { createLogger, parseLevel, type Logger, type Sink } from './log';
 import type { IXboxDataProvider } from './provider/types';
 import { isAllowedOrigin, parseAllowedOrigins } from './origins';
 import { ClipService } from './service';
@@ -12,12 +13,22 @@ export interface AppDeps {
   provider: IXboxDataProvider;
   /** Injectable clock, so tests can move past expiry times. */
   now?: () => number;
+  /** Where log records go; the console by default. Tests read records here. */
+  sink?: Sink;
 }
 
-type AppContext = Context<{ Bindings: AppEnv }>;
+type AppVars = { Bindings: AppEnv; Variables: { log: Logger } };
+type AppContext = Context<AppVars>;
 
-export function createApp({ provider, now = Date.now }: AppDeps) {
-  const app = new Hono<{ Bindings: AppEnv }>();
+export function createApp({ provider, now = Date.now, sink }: AppDeps) {
+  const app = new Hono<AppVars>();
+  const logger = (c: AppContext) => createLogger({ level: parseLevel(c.env.LOG_LEVEL), sink, secrets: [c.env.XBL_API_KEY] });
+
+  // First, so every later handler, the error handler included, has a logger.
+  app.use('*', async (c, next) => {
+    c.set('log', logger(c));
+    await next();
+  });
   const service = (c: AppContext) => new ClipService(provider, new Cache(c.env.CACHE, now), c.env.XBL_API_KEY, now);
 
   app.use(
@@ -42,7 +53,7 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
   // (PLAN-v1.md §6, "Locking the API to the site"). Logged here: Pages keeps no logs.
   app.use('/api/*', async (c, next) => {
     const guard = c.req.header('x-site-guard');
-    if (guard) console.warn(`site guard would refuse (${guard.slice(0, 40)}): ${c.req.method} ${c.req.path}`);
+    if (guard) c.var.log.emit('inbound.site_guard_would_refuse', { reason: guard.slice(0, 40), method: c.req.method, path: c.req.path });
     await next();
   });
 
@@ -125,7 +136,7 @@ export function createApp({ provider, now = Date.now }: AppDeps) {
 
   app.onError((err, c) => {
     const appErr = err instanceof AppError ? err : new AppError('INTERNAL_ERROR');
-    if (!(err instanceof AppError)) console.error('unhandled error', err);
+    if (!(err instanceof AppError)) (c.get('log') ?? logger(c)).emit('app.unhandled', { error: err, method: c.req.method, path: c.req.path });
     if (appErr.retryAfter) c.header('Retry-After', appErr.retryAfter);
     return c.json(appErr.toBody(), appErr.status);
   });

@@ -954,7 +954,7 @@ working backlog; `CLAUDE.md` is the map of the code.
 - **Locking the API to the site** (§6): brought forward 2026-11-05;
   phases 1 and 2 done the same day, phase 3 under way.
 - **Observability** (§11): API only, alerting by Cloudflare monitors;
-  the logger (§11.6 step 2) is under way.
+  the logger is built (§11.6 step 2); the remaining call sites are next.
 
 ### Closed
 
@@ -1143,8 +1143,8 @@ field, not through the URL.
 
 1. ~~Spike~~: settled 2026-11-06 by native monitors (§11.2); the JSON
    field check waits for the first structured lines.
-2. Logger, event registry, `LOG_LEVEL` and the tests in §11.4; the two
-   call sites in `app.ts` move onto it. No change to behaviour beyond
+2. **Done 2026-11-06.** Logger, event registry, `LOG_LEVEL` and the
+   tests in §11.4; the two call sites in `app.ts` moved onto it. No change to behaviour beyond
    log format.
 3. Move the remaining call sites (cache, provider) onto events, and add
    the missing ones from §11.5. The provider and the cache get the

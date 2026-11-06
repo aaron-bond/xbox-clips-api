@@ -4,9 +4,13 @@ import { createApp } from '../src/app';
 import type { ClipPage } from '../src/domain';
 import type { AppEnv } from '../src/env';
 import { AppError } from '../src/errors';
+import type { LogRecord } from '../src/log';
 import { keys } from '../src/service';
 import { FakeProvider, makeClip } from './fake-provider';
 import type { Game } from '../src/domain';
+
+/** Never expected in a log record (PLAN-v1.md §11.4). */
+const SENTINEL_KEY = 'sentinel-api-key-7f3c';
 
 const NOW = Date.parse('2026-10-16T12:00:00.000Z');
 const XUID = '2533274900000001';
@@ -24,13 +28,15 @@ const allowAll = { limit: async () => ({ success: true }) } as unknown as RateLi
 function setup() {
   const provider = new FakeProvider();
   let now = NOW;
-  const app = createApp({ provider, now: () => now });
-  const testEnv = { ...env, XBL_API_KEY: 'test-key', RATE_LIMITER: allowAll } as AppEnv;
+  const records: LogRecord[] = [];
+  const app = createApp({ provider, now: () => now, sink: (r) => records.push(r) });
+  const testEnv = { ...env, XBL_API_KEY: SENTINEL_KEY, RATE_LIMITER: allowAll } as AppEnv;
   const get = (path: string, headers: Record<string, string> = {}, override: Partial<AppEnv> = {}) =>
     app.request(path, { headers }, { ...testEnv, ...override });
   return {
     provider,
     get,
+    records,
     advance: (ms: number) => {
       now += ms;
     },
@@ -97,13 +103,36 @@ describe('basics', () => {
   });
 
   it('logs requests the site guard would refuse, and still serves them', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { get, provider } = setup();
+    const { get, provider, records } = setup();
     provider.mostPlayed = [];
-    const res = await get('/api/v1/games/most-played', { 'X-Site-Guard': 'sec-fetch-site:cross-site' });
+    const res = await get('/api/v1/games/most-played', { 'X-Site-Guard': 'sec-fetch-site:cross-site', 'CF-Connecting-IP': '203.0.113.7' });
     expect(res.status).toBe(200);
-    expect(warn).toHaveBeenCalledWith('site guard would refuse (sec-fetch-site:cross-site): GET /api/v1/games/most-played');
-    warn.mockRestore();
+    expect(records).toEqual([
+      { event: 'inbound.site_guard_would_refuse', level: 'warn', reason: 'sec-fetch-site:cross-site', method: 'GET', path: '/api/v1/games/most-played' },
+    ]);
+    expect(JSON.stringify(records)).not.toContain('203.0.113.7');
+  });
+});
+
+describe('logging', () => {
+  it('logs an unhandled error as an alert, with its stack, and answers with the fixed message', async () => {
+    const { get, provider, records } = setup();
+    provider.failWith = new TypeError(`boom while calling with ${SENTINEL_KEY}`);
+    const res = await get('/api/v1/games/most-played');
+    expect(res.status).toBe(500);
+    expect(await res.text()).not.toContain('boom');
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ event: 'app.unhandled', level: 'error', alert: true, method: 'GET', path: '/api/v1/games/most-played' });
+    expect(records[0]!.error).toMatchObject({ name: 'TypeError', message: 'boom while calling with [secret]' });
+    expect((records[0]!.error as { stack?: string }).stack).toBeTypeOf('string');
+    expect(JSON.stringify(records)).not.toContain(SENTINEL_KEY);
+  });
+
+  it('logs nothing of its own for an ordinary request', async () => {
+    const { get, provider, records } = setup();
+    provider.mostPlayed = [];
+    await get('/api/v1/games/most-played');
+    expect(records).toEqual([]);
   });
 });
 

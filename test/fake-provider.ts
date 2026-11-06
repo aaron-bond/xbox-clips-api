@@ -12,7 +12,7 @@ export class FakeProvider implements IXboxDataProvider {
   /** Pages per XUID; page N is fetched with continuation token `page-N`. */
   clipPages = new Map<string, ClipPage[]>();
   /** When set, every call throws this. */
-  failWith: AppError | null = null;
+  failWith: Error | null = null;
   mostPlayed: Game[] = [];
   histories = new Map<string, TitleHistory | null>();
   mythics = new Map<string, number | null>();

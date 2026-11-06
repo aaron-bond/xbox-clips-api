@@ -12,6 +12,8 @@
   // Non-secret configuration. XBL_API_KEY is a secret: `wrangler secret put XBL_API_KEY`
   // in production, `.dev.vars` locally. Never add it here - vars are committed in plain text.
   "vars": {
+    // Lowest log level kept: info in production, debug locally via .dev.vars (PLAN-v1.md §11.3).
+    "LOG_LEVEL": "info",
     // Comma-separated: the UI's domain, its Pages hostname and preview deployments, and
     // local UI development. `https://*.host` matches subdomains of host only. Never a bare
     // wildcard: the shared upstream budget is worth protecting from other sites.
