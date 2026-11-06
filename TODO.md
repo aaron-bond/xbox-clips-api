@@ -20,11 +20,6 @@ any trade-off made.
       `workers_dev` and `preview_urls` to false and drop the localhost
       origin; then Bot Fight Mode and a WAF rate rule, one at a time.
       Turnstile only if abuse continues.
-- [ ] **Cache nearest-completion for 15 minutes per player** (PLAN §5,
-      "Nearest completion"). Uncached, a loop on one public player spends a
-      call per request with no list of players needed: the cheapest way to
-      drain the budget. Key `nearest:{xuid}`; update the route table in
-      PLAN §5.
 - [ ] **Upstream-miss limit** (PLAN §6). A second Rate Limiting binding
       per IP, checked only before an upstream call; plus tighter limits
       on `/career`, `/achievements` and `/nearest-completion`. Tune with
@@ -54,6 +49,11 @@ any trade-off made.
       under 20). Likely folded into the observability plan.
 
 ## Done
+
+- [x] **Nearest-completion cached 15 minutes per player** (2026-11-06,
+      PLAN §5). Key `nearest:{xuid}`, kept no longer than fresh, so no
+      stale fallback. Hidden histories are cached too. A loop on one
+      player now costs one upstream call per 15 minutes.
 
 - [x] **API served through the site, enforced** (2026-11-05, PLAN §6
       phases 1 and 2). The UI's Pages Function serves `xboxclips.io/api/*`

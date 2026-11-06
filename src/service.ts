@@ -36,6 +36,9 @@ export const POLICY = {
   playtime: { fresh: 15 * MINUTE, retain: 7 * DAY },
   /** A player's Mythic total. The whole title history has to be read for it, so one read a day. */
   mythics: { fresh: 24 * HOUR, retain: 30 * DAY },
+  /** Read only on a button press, but cached so a loop on one player can't drain the budget (PLAN-v1.md §6).
+   *  Kept no longer than fresh: no stale fallback. */
+  nearest: { fresh: 15 * MINUTE, retain: 15 * MINUTE },
   /** The same for every visitor, so one upstream call per window serves all traffic. */
   mostPlayed: { fresh: 6 * HOUR, retain: 7 * DAY },
   /** Store screenshots barely change; only the parsed list (a few KB) is stored. */
@@ -56,6 +59,7 @@ export const keys = {
   // title history. v2 held the facts only.
   career: (xuid: string) => `career:v3:${xuid}`,
   mythics: (xuid: string) => `mythics:${xuid}`,
+  nearest: (xuid: string) => `nearest:${xuid}`,
   achievements: (xuid: string, titleId: string) => `achievements:${xuid}:${titleId}`,
   playtime: (xuid: string, titleId: string) => `playtime:${xuid}:${titleId}`,
   screenshots: (productId: string) => `screenshots:${productId}`,
@@ -160,12 +164,18 @@ export class ClipService {
   }
 
   /**
-   * The games a player is closest to finishing. Deliberately not cached: it runs
-   * only when a visitor presses the button, and each press is one upstream call.
+   * The games a player is closest to finishing. Cached briefly, and wrapped like
+   * the Mythic count so a hidden history (null) is cached too: otherwise a loop on
+   * one player would spend an upstream call per request.
    */
   async getNearestCompletion(id: PlayerIdentifier): Promise<{ xuid: string } & NearestCompletion> {
     const xuid = await this.resolveXuid(id);
-    const found = await this.provider.getNearestCompletion(this.apiKey, xuid);
+    const entry = await this.cache.readThrough(keys.nearest(xuid), async () => {
+      const found = await this.provider.getNearestCompletion(this.apiKey, xuid);
+      const now = this.now();
+      return { value: { found }, freshUntil: now + POLICY.nearest.fresh, retainUntil: now + POLICY.nearest.retain };
+    });
+    const found = entry!.found;
     return { xuid, games: found?.games ?? [], mythics: found?.mythics ?? [], capped: found?.capped ?? false };
   }
 

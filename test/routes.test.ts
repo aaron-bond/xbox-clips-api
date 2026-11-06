@@ -498,20 +498,26 @@ describe('mythics', () => {
 describe('nearest completion', () => {
   const games = [{ titleId: '1', name: 'Close', imageUrl: null, gamerscore: 90, totalGamerscore: 100, percent: 90, lastPlayed: null, unlocked: 9, xbox360: false, mythic: false }];
 
-  it('serves the list, reading upstream on every request and leaving the title history alone', async () => {
-    const { get, provider } = setup();
+  it('serves the list, caching it 15 minutes and leaving the title history alone', async () => {
+    const { get, provider, advance } = setup();
     provider.nearest.set(XUID, { games, mythics: [], capped: true });
     const res = await get(`/api/v1/players/${XUID}/nearest-completion`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ xuid: XUID, games, mythics: [], capped: true });
+    advance(14 * 60 * 1000); // still fresh
+    await get(`/api/v1/players/${XUID}/nearest-completion`);
+    expect(provider.calls.getNearestCompletion).toBe(1);
+    advance(2 * 60 * 1000); // past 15 minutes
     await get(`/api/v1/players/${XUID}/nearest-completion`);
     expect(provider.calls.getNearestCompletion).toBe(2);
     expect(provider.calls.getTitleHistory).toBe(0);
   });
 
-  it('gives an empty list for a hidden history', async () => {
-    const { get } = setup();
+  it('gives an empty list for a hidden history, and caches that too', async () => {
+    const { get, provider } = setup();
     expect(await (await get(`/api/v1/players/${XUID}/nearest-completion`)).json()).toEqual({ xuid: XUID, games: [], mythics: [], capped: false });
+    await get(`/api/v1/players/${XUID}/nearest-completion`);
+    expect(provider.calls.getNearestCompletion).toBe(1);
   });
 
   it('answers with the usual error when upstream fails', async () => {

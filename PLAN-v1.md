@@ -368,7 +368,7 @@ Base path `/api/v1`.
 | `GET /api/v1/players/:identifier/games` | `{ xuid, games, limited }`: the player's recent games (at most 100, newest first) with gamerscore progress, unlocked count and `xbox360` and `mythic` flags. From the same cached read as `/career`, so it costs no extra upstream call. Empty when the history is hidden. |
 | `GET /api/v1/players/:identifier/achievements/:titleId` | `{ xuid, titleId, game, titleName, lockedListed, minutesPlayed, achievements }`: the player's achievements in one game, and minutes played (null when Xbox reports none). Xbox 360 games (known from the recent games) use the 360 endpoint and set `lockedListed: false`. A game outside the recent games tries the current endpoint, which answers an empty list for a 360 game, then the 360 one: a second upstream call on that path, cached with the result. Hidden achievements of a recent game come back as an empty list; a title with none on either endpoint that isn't among the recent games is `404 NOT_FOUND`. A malformed title ID is `400 INVALID_IDENTIFIER`. |
 | `GET /api/v1/players/:identifier/mythics` | `{ xuid, mythics }`: the player's Mythic total, null when the history is hidden. A separate full read of the title history, cached a day (§5). |
-| `GET /api/v1/players/:identifier/nearest-completion` | `{ xuid, games, mythics, capped }`: the player's 100 started, unfinished games nearest to complete, and up to 100 Mythic or fully earned games, most recently played first, both from their whole history in the `/games` shape. `capped` is true when the history reached the 1,000 titles upstream lists. Empty when the history is hidden. Not cached yet; 15 minutes planned (§5). |
+| `GET /api/v1/players/:identifier/nearest-completion` | `{ xuid, games, mythics, capped }`: the player's 100 started, unfinished games nearest to complete, and up to 100 Mythic or fully earned games, most recently played first, both from their whole history in the `/games` shape. `capped` is true when the history reached the 1,000 titles upstream lists. Empty when the history is hidden. Cached 15 minutes (§5). |
 | `GET /api/v1/games/most-played` | `{ games }`: the store's most-played games, ranked, duplicates merged. |
 | `GET /api/v1/games/:productId` | One game from that cached list, for the UI's game page. `404 GAME_NOT_FOUND` if it is not in the list. |
 | `GET /api/v1/games/:productId/screenshots` | `{ screenshots }`: the game's store screenshots (`url`, `caption` or null, `width`, `height`), in store order, at most 30. Only for games in the most-played list: any other id is `404 GAME_NOT_FOUND` before any upstream call, so arbitrary ids can't spend the budget. |
@@ -555,22 +555,21 @@ than the player's Mythic total, since that also counts games beyond the 1,000.
 
 It is the only read that parses the full title history, and so the most
 expensive: a separate route, run only when a visitor presses the button, so
-`/career` and `/games` keep stopping at 100 games. It is deliberately not cached
-in KV, since little traffic is expected: each request is one upstream call and
-up to about 30 seconds. Measured live on 2026-11-01 for two players at the
+`/career` and `/games` keep stopping at 100 games. Each upstream read is one
+call and up to about 30 seconds. Measured live on 2026-11-01 for two players at the
 1,000-title limit: 11 and 17 seconds, 10 and 14 ms of CPU, against the free
 plan's 10 ms. Both succeeded, and parsing is already native, so a scan written in
-JavaScript would not beat it. Exceeding the limit would fail only this route. The
-browser reuses a result for 5 minutes. If it is ever used more, a short KV entry
-is the fix.
+JavaScript would not beat it. Exceeding the limit would fail only this route.
 
-**Planned 2026-11-06: cache it 15 minutes per player**, as
-`nearest:{xuid}`, fresh 15 minutes and kept no longer. Not for traffic but for
-the budget: uncached, it is the cheapest way to drain the shared budget, since
-a loop on one public player costs a call per request and needs no list of
-players (§6). Cached, the same loop costs one call per player per 15 minutes,
-however many clients or IPs run it. Each write follows an upstream call, so
-writes can't outrun the budget. The UI's 5-minute browser copy stays.
+**Cached 15 minutes per player** (2026-11-06), as `nearest:{xuid}`, kept no
+longer, so there is no stale fallback. Not for traffic but for the budget:
+uncached, it was the cheapest way to drain the shared budget, since a loop on
+one public player cost a call per request and needed no list of players (§6).
+Cached, the same loop costs one call per player per 15 minutes, however many
+clients or IPs run it. A hidden history is cached too, as null. Each write
+follows an upstream call, so writes never outnumber calls, though a fully
+drained budget (3,600 calls a day) could still exceed KV's 1,000 daily writes,
+as for every cached route. The UI's 5-minute browser copy stays.
 
 ### Most-played games
 
@@ -795,9 +794,9 @@ isn't proven.
 - **Tighter per-IP limits on the expensive routes** (`/career`,
   `/achievements`, `/nearest-completion`), tuned the same way.
 
-**Caching nearest-completion for 15 minutes** (§5) comes before both:
-it closes the one route a script can loop on for a single player with no
-list of players. A per-IP-and-path key on the existing limiter (a few
+**Caching nearest-completion for 15 minutes** (§5, done 2026-11-06) came
+before both: it closed the one route a script could loop on for a single
+player with no list of players. A per-IP-and-path key on the existing limiter (a few
 lines, about 10 a minute) was considered alongside; it slows one client
 on one URL but still allows hundreds of calls an hour, so caching is the
 fix and the key is optional.
