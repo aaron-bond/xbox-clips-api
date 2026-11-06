@@ -1113,9 +1113,11 @@ for before locking the API down, and neither leaves a trace today.
 **Request URLs are masked in Workers Logs.** Seen 2026-11-06: a clip
 request answered `200` was logged as `/clips/<xuid>/REDACTED`, though
 the route refuses anything but a UUID with `400`; the same entry's
-`referer` kept the UUID. Presumably Cloudflare hides UUID-shaped
-segments as likely tokens (not confirmed). Any event that needs a clip
-ID logs it as its own field, not through the URL.
+`referer` kept the UUID. Confirmed the same day with a made-up UUID
+sent to a non-existent route: Cloudflare replaces UUID-shaped path
+segments with `REDACTED` in the logged URL, path and trigger; headers
+are left alone. Any event that needs a clip ID logs it as its own
+field, not through the URL.
 
 ### 11.5 Spike, first in the work
 
