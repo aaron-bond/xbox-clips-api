@@ -45,7 +45,8 @@ response cache; the browser streams media straight from the Xbox CDN.
   never take the first result.
 - **Log through the registry.** Every record is a named event from
   `src/log-events.ts`; no raw `console` calls, and never a raw IP. An
-  event with `alert` has a Cloudflare monitor that finds it by name.
+  event with `alert` is matched by its message (the event name) for
+  alerting; keep `message` equal to the event name.
 - **Encode KV values exactly once.** `JSON.stringify` on put, `get(key, 'json')`
   on read.
 

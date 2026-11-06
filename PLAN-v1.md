@@ -953,8 +953,8 @@ working backlog; `CLAUDE.md` is the map of the code.
 
 - **Locking the API to the site** (§6): brought forward 2026-11-05;
   phases 1 and 2 done the same day, phase 3 under way.
-- **Observability** (§11): API only, alerting by Cloudflare monitors;
-  logging is on events (§11.6 steps 2-3); the monitors are next.
+- **Observability** (§11): API only; logging is on events (§11.6 steps
+  2-3). How to alert is deferred: Free allows no custom monitors (§11.2).
 
 ### Closed
 
@@ -1014,18 +1014,33 @@ Cloudflare's alert **monitors** (beta; dashboard: Alerts, Monitors) run
 a SQL query on a schedule against a dataset, and notify by email,
 webhook or PagerDuty when the single number it returns crosses a
 threshold, departs from its baseline, or breaks an SLO. Workers Logs is
-a dataset (`logs.workersLogs`). Confirmed on this account (Free) on
-2026-11-06: a threshold monitor can be created on it, and the
-configuration screen shows our logs, including `CpuTimeMs` per
-invocation.
+a dataset (`logs.workersLogs`).
 
-**Monitors in place:**
+**Not available on this account (Free).** On 2026-11-06 the monitor form
+opened and previewed our logs, but saving failed: "this account can have
+at most 0 custom analytics monitors". Whether Workers Paid raises that
+allowance is unconfirmed. **Decision deferred** between:
 
-| Monitor | Matches | Fires | Window, interval, repeat |
-| :--- | :--- | :--- | :--- |
-| Upstream budget low | message `upstream.budget_low` | count > 0 | 1 hour, every 15 minutes, 24 hours |
+1. A scheduled GitHub Actions workflow that queries Workers Logs through
+   Cloudflare's API once a day and opens or updates a GitHub issue when
+   anything alert-worthy happened (GitHub emails it). Covers every
+   event and `exceededCpu`; free. First check that the query API works
+   on Free.
+2. The Worker alerting on its own events (a "sent today" KV entry, then
+   one Discord webhook or Email Routing message). Fast, but blind to
+   CPU kills, and adds code to the request path.
+3. Workers Paid, if it unlocks monitors. It has no hard spending cap:
+   overage keeps running and is billed (requests $0.30 per million past
+   10 million a month), so request floods are the exposure, braked by
+   §6 phase 5. Revisit after phase 5, or if CPU kills appear.
 
-Each alert-worthy event gets its own monitor: a 24-hour evaluation
+The findings below hold whichever is chosen.
+
+Had monitors been available, the first would have been: message
+`upstream.budget_low`, count > 0, averaged over 1 hour, run every 15
+minutes, repeated at most every 24 hours.
+
+With monitors, each alert-worthy event would get its own monitor: a 24-hour evaluation
 window, checked hourly, repeating a notification at most every 24
 hours, emailing the maintainer. Not one combined digest, but nothing to
 build, host or keep within its own limits.
@@ -1035,7 +1050,7 @@ record: a logged object's keys arrive as top-level fields (`event`,
 `path`, ...) beside Cloudflare's `$workers` and `$metadata`. The
 monitor builder doesn't offer them, though: it lists Cloudflare's own
 fields. So each record repeats its event name as `message`, which
-surfaces as `$metadata.message`, and **monitors match on the message**.
+surfaces as `$metadata.message`, and **alerts match on the message**.
 A test pins `message` to the event name; never put anything else in it. A request's own record
 (`type: cf-worker-event`) is separate from ours (`cf-worker`), joined by
 `$metadata.requestId`; it carries `$workers.outcome` (`ok`, or
@@ -1175,5 +1190,6 @@ field, not through the URL.
      history only. The transforms' silent fallbacks (the Mythics tail,
      for one) stay silent for now.
    - Upstream bodies are trimmed to 200 characters, not 500.
-4. Create the monitors from the registry's alert-marked events.
+4. Alerting: decision deferred (§11.2). Then wire the registry's
+   alert-marked events, plus `exceededCpu`, into whichever is chosen.
 5. Two weeks of real data; tune the thresholds.

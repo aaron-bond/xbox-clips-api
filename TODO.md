@@ -24,16 +24,13 @@ any trade-off made.
       per IP, checked only before an upstream call; plus tighter limits
       on `/career`, `/achievements` and `/nearest-completion`. Tune with
       real refusals.
-- [ ] **Observability** (PLAN §11). API only: the UI's side was
-      dropped 2026-11-06. Alerting by Cloudflare's own monitors on
-      Workers Logs, emailed at most daily per kind of problem; no
-      summary Worker. Logger, event registry and every
-      call site done (§11.6 steps 2-3). Logged fields are filterable
-      (§11.2). Next: create the monitors from the registry's
-      alert-marked events, plus `exceededCpu`. Watches CPU
-      (`exceededCpu` outcomes), KV writes per day, the upstream budget, rate-limit
-      refusals and junk gamertag lookups. Several items below wait on
-      this data.
+- [ ] **Observability: alerting, decision deferred** (PLAN §11.2).
+      Logging is done: every log line is a named event, filterable in
+      Workers Logs (§11.6 steps 2-3). Cloudflare's monitors can't be
+      saved on Free (0 allowed). Options: a daily GitHub Actions query
+      opening an issue, the Worker alerting on its own events, or
+      Workers Paid. To watch: `exceededCpu`, KV writes per day, the
+      upstream budget, rate-limit refusals, junk gamertag lookups.
 
 ## Later
 
