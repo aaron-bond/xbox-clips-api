@@ -44,9 +44,8 @@ response cache; the browser streams media straight from the Xbox CDN.
 - **Gamertag search is fuzzy.** Only an exact (case-insensitive) match counts;
   never take the first result.
 - **Log through the registry.** Every record is a named event from
-  `src/log-events.ts`; no new raw `console` calls (those left in the cache
-  and provider move in PLAN §11.6 step 3), and never a raw IP. An event
-  with `alert` has a Cloudflare monitor that finds it by name.
+  `src/log-events.ts`; no raw `console` calls, and never a raw IP. An
+  event with `alert` has a Cloudflare monitor that finds it by name.
 - **Encode KV values exactly once.** `JSON.stringify` on put, `get(key, 'json')`
   on read.
 

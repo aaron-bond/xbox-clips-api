@@ -1,7 +1,7 @@
 import { Cache } from './cache';
 import { toMetadata, type CareerStats, type ClipMetadata, type ClipPage, type Game, type GameAchievements, type GameClipInfo, type NearestCompletion, type PlayerGame, type Screenshot, type TitleHistory, type XboxUserProfile } from './domain';
 import { AppError } from './errors';
-import type { IXboxDataProvider } from './provider/types';
+import type { IXboxDataProvider, UpstreamCall } from './provider/types';
 import type { PlayerIdentifier } from './validation';
 
 const MINUTE = 60 * 1000;
@@ -74,37 +74,44 @@ export interface PlayerClips {
 
 /**
  * Orchestrates provider calls and caching. One instance per request: it carries
- * the request's API key and clock.
+ * the request's API key, logger and clock.
  */
 export class ClipService {
   constructor(
     private readonly provider: IXboxDataProvider,
     private readonly cache: Cache,
-    private readonly apiKey: string,
+    private readonly call: UpstreamCall,
     private readonly now: () => number,
   ) {}
 
   async resolveXuid(id: PlayerIdentifier): Promise<string> {
     if (id.kind === 'xuid') return id.xuid;
     const xuid = await this.cache.readThrough(keys.xuid(id.gamertag), async () => {
-      const found = await this.provider.resolveGamertag(this.apiKey, id.gamertag);
+      const found = await this.provider.resolveGamertag(this.call, id.gamertag);
       if (!found) return null;
       const now = this.now();
       return { value: found, freshUntil: now + POLICY.xuid.fresh, retainUntil: now + POLICY.xuid.retain };
     });
-    if (!xuid) throw new AppError('PLAYER_NOT_FOUND');
+    if (!xuid) {
+      // Each one spent a search call: the signal for negative caching (TODO.md).
+      this.call.log.emit('player.not_found', { kind: 'gamertag' });
+      throw new AppError('PLAYER_NOT_FOUND');
+    }
     return xuid;
   }
 
   async getProfile(id: PlayerIdentifier): Promise<XboxUserProfile> {
     const xuid = await this.resolveXuid(id);
     const profile = await this.cache.readThrough(keys.profile(xuid), async () => {
-      const found = await this.provider.getProfile(this.apiKey, xuid);
+      const found = await this.provider.getProfile(this.call, xuid);
       if (!found) return null;
       const now = this.now();
       return { value: found, freshUntil: now + POLICY.profile.fresh, retainUntil: now + POLICY.profile.retain };
     });
-    if (!profile) throw new AppError('PLAYER_NOT_FOUND');
+    if (!profile) {
+      this.call.log.emit('player.not_found', { kind: id.kind });
+      throw new AppError('PLAYER_NOT_FOUND');
+    }
     return profile;
   }
 
@@ -156,7 +163,7 @@ export class ClipService {
   async getMythics(id: PlayerIdentifier): Promise<{ xuid: string; mythics: number | null }> {
     const xuid = await this.resolveXuid(id);
     const entry = await this.cache.readThrough(keys.mythics(xuid), async () => {
-      const mythics = await this.provider.getMythics(this.apiKey, xuid);
+      const mythics = await this.provider.getMythics(this.call, xuid);
       const now = this.now();
       return { value: { mythics }, freshUntil: now + POLICY.mythics.fresh, retainUntil: now + POLICY.mythics.retain };
     });
@@ -171,7 +178,7 @@ export class ClipService {
   async getNearestCompletion(id: PlayerIdentifier): Promise<{ xuid: string } & NearestCompletion> {
     const xuid = await this.resolveXuid(id);
     const entry = await this.cache.readThrough(keys.nearest(xuid), async () => {
-      const found = await this.provider.getNearestCompletion(this.apiKey, xuid);
+      const found = await this.provider.getNearestCompletion(this.call, xuid);
       const now = this.now();
       return { value: { found }, freshUntil: now + POLICY.nearest.fresh, retainUntil: now + POLICY.nearest.retain };
     });
@@ -203,15 +210,15 @@ export class ClipService {
 
   private async fetchAchievements(xuid: string, titleId: string, game: PlayerGame | null) {
     const xbox360 = game?.xbox360 ?? false;
-    const fetched = await this.provider.getAchievements(this.apiKey, xuid, titleId, xbox360);
+    const fetched = await this.provider.getAchievements(this.call, xuid, titleId, xbox360);
     if (game || fetched?.achievements.length) return fetched && { ...fetched, xbox360 };
-    const older = await this.provider.getAchievements(this.apiKey, xuid, titleId, true);
+    const older = await this.provider.getAchievements(this.call, xuid, titleId, true);
     return older && { ...older, xbox360: true };
   }
 
   private async minutesPlayed(xuid: string, titleId: string): Promise<number | null> {
     const entry = await this.cache.readThrough(keys.playtime(xuid, titleId), async () => {
-      const fetched = await this.provider.getMinutesPlayed(this.apiKey, [xuid], titleId);
+      const fetched = await this.provider.getMinutesPlayed(this.call, [xuid], titleId);
       const now = this.now();
       return { value: { minutes: fetched[xuid] ?? null }, freshUntil: now + POLICY.playtime.fresh, retainUntil: now + POLICY.playtime.retain };
     });
@@ -221,7 +228,7 @@ export class ClipService {
   /** One upstream read per player per day serves the career facts, the games list and the 360 lookup. */
   private async titleHistory(xuid: string): Promise<TitleHistory | null> {
     const entry = await this.cache.readThrough(keys.career(xuid), async () => {
-      const history = await this.provider.getTitleHistory(this.apiKey, xuid);
+      const history = await this.provider.getTitleHistory(this.call, xuid);
       const now = this.now();
       return { value: { history }, freshUntil: now + POLICY.career.fresh, retainUntil: now + POLICY.career.retain };
     });
@@ -230,7 +237,7 @@ export class ClipService {
 
   async getMostPlayed(): Promise<Game[]> {
     const games = await this.cache.readThrough(keys.mostPlayed(), async () => {
-      const fetched = await this.provider.getMostPlayedGames(this.apiKey);
+      const fetched = await this.provider.getMostPlayedGames(this.call);
       const now = this.now();
       return { value: fetched, freshUntil: now + POLICY.mostPlayed.fresh, retainUntil: now + POLICY.mostPlayed.retain };
     });
@@ -251,7 +258,7 @@ export class ClipService {
   async getScreenshots(productId: string): Promise<Screenshot[]> {
     await this.getGame(productId);
     const shots = await this.cache.readThrough(keys.screenshots(productId), async () => {
-      const fetched = await this.provider.getScreenshots(this.apiKey, productId);
+      const fetched = await this.provider.getScreenshots(this.call, productId);
       const now = this.now();
       return { value: fetched, freshUntil: now + POLICY.screenshots.fresh, retainUntil: now + POLICY.screenshots.retain };
     });
@@ -262,7 +269,7 @@ export class ClipService {
     const page = await this.cache.readThrough(
       keys.clips(xuid),
       async () => {
-        const fetched = await this.provider.getClips(this.apiKey, xuid);
+        const fetched = await this.provider.getClips(this.call, xuid);
         return { value: fetched, freshUntil: this.clipsFreshUntil(fetched), retainUntil: this.now() + POLICY.clips.retain };
       },
       (stale) => this.withoutExpiredMedia(stale),
@@ -280,7 +287,7 @@ export class ClipService {
     // page backs the player's shelf, and the walk is bounded.
     let token = first.continuationToken;
     for (let pages = 1; token && pages < POLICY.maxPagesPerClipLookup; pages++) {
-      const page = await this.provider.getClips(this.apiKey, xuid, token);
+      const page = await this.provider.getClips(this.call, xuid, token);
       const found = page.clips.find((c) => c.clipId === clipId);
       if (found) return found;
       token = page.continuationToken;

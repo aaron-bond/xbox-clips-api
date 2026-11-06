@@ -7,7 +7,7 @@ describe('parsePlayerIdentifier', () => {
     expect(parsePlayerIdentifier('2533274900000001')).toEqual({ kind: 'xuid', xuid: '2533274900000001' });
   });
 
-  it.each(['TestPlayer', 'Major Nelson', 'Kåre', 'プレイヤー', 'Player#1234', 'A'])('accepts gamertag %s', (g) => {
+  it.each(['TestPlayer', 'Test Player', 'Kåre', 'プレイヤー', 'Player#1234', 'A'])('accepts gamertag %s', (g) => {
     expect(parsePlayerIdentifier(g)).toEqual({ kind: 'gamertag', gamertag: g });
   });
 

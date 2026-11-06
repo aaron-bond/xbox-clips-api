@@ -107,7 +107,7 @@ describe('basics', () => {
     provider.mostPlayed = [];
     const res = await get('/api/v1/games/most-played', { 'X-Site-Guard': 'sec-fetch-site:cross-site', 'CF-Connecting-IP': '203.0.113.7' });
     expect(res.status).toBe(200);
-    expect(records).toEqual([
+    expect(records.filter((r) => r.event.startsWith('inbound.'))).toEqual([
       { event: 'inbound.site_guard_would_refuse', level: 'warn', reason: 'sec-fetch-site:cross-site', method: 'GET', path: '/api/v1/games/most-played' },
     ]);
     expect(JSON.stringify(records)).not.toContain('203.0.113.7');
@@ -121,18 +121,47 @@ describe('logging', () => {
     const res = await get('/api/v1/games/most-played');
     expect(res.status).toBe(500);
     expect(await res.text()).not.toContain('boom');
-    expect(records).toHaveLength(1);
+    expect(records.map((r) => r.event)).toEqual(['app.unhandled', 'request.failed']);
+    expect(records[1]).toMatchObject({ code: 'INTERNAL_ERROR', status: 500 });
     expect(records[0]).toMatchObject({ event: 'app.unhandled', level: 'error', alert: true, method: 'GET', path: '/api/v1/games/most-played' });
     expect(records[0]!.error).toMatchObject({ name: 'TypeError', message: 'boom while calling with [secret]' });
     expect((records[0]!.error as { stack?: string }).stack).toBeTypeOf('string');
     expect(JSON.stringify(records)).not.toContain(SENTINEL_KEY);
   });
 
-  it('logs nothing of its own for an ordinary request', async () => {
+  it('logs only the cache write for an ordinary request', async () => {
     const { get, provider, records } = setup();
     provider.mostPlayed = [];
     await get('/api/v1/games/most-played');
+    expect(records).toEqual([{ event: 'cache.written', level: 'info', alert: true, prefix: 'games' }]);
+    records.length = 0;
+    await get('/api/v1/games/most-played');
     expect(records).toEqual([]);
+  });
+
+  it('logs an inbound rate-limit refusal, without the client IP', async () => {
+    const { get, records } = setup();
+    const refuse = { limit: async () => ({ success: false }) } as unknown as RateLimit;
+    const res = await get('/api/v1/games/most-played', { 'CF-Connecting-IP': '203.0.113.7' }, { RATE_LIMITER: refuse });
+    expect(res.status).toBe(429);
+    expect(records[0]).toMatchObject({ event: 'inbound.rate_limited', level: 'warn', alert: true, path: '/api/v1/games/most-played' });
+    expect(JSON.stringify(records)).not.toContain('203.0.113.7');
+  });
+
+  it('logs an unknown gamertag by kind only, and an invalid identifier', async () => {
+    const { get, records } = setup();
+    expect((await get('/api/v1/players/NoSuchPlayer')).status).toBe(404);
+    expect(records.find((r) => r.event === 'player.not_found')).toEqual({ event: 'player.not_found', level: 'info', alert: true, kind: 'gamertag' });
+    expect((await get('/api/v1/players/bad!!name')).status).toBe(400);
+    expect(records.map((r) => r.event)).toContain('request.invalid');
+  });
+
+  it('logs a failed cache write by key kind and keeps serving', async () => {
+    const { get, provider, records } = setup();
+    provider.mostPlayed = [];
+    const broken = { ...env.CACHE, get: async () => null, put: async () => Promise.reject(new Error('quota')) } as unknown as KVNamespace;
+    expect((await get('/api/v1/games/most-played', {}, { CACHE: broken })).status).toBe(200);
+    expect(records).toMatchObject([{ event: 'cache.write_failed', level: 'error', alert: true, prefix: 'games', error: { message: 'quota' } }]);
   });
 });
 

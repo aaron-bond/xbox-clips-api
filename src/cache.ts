@@ -1,4 +1,5 @@
 import { isUpstreamPressure } from './errors';
+import type { Logger } from './log';
 
 /**
  * Every cached value is wrapped with its own freshness. `freshUntil` is the soft
@@ -22,17 +23,21 @@ export interface Loaded<T> {
 // KV rejects expirations less than 60 seconds away.
 const KV_MIN_TTL_S = 60;
 
+/** The key's kind (`clips`, `profile`, ...), for counting; the key itself may hold a gamertag or XUID. */
+const prefixOf = (key: string) => key.split(':', 1)[0];
+
 export class Cache {
   constructor(
     private readonly kv: KVNamespace,
     private readonly now: () => number,
+    private readonly log: Logger,
   ) {}
 
   async read<T>(key: string): Promise<CacheEntry<T> | null> {
     try {
       return await this.kv.get<CacheEntry<T>>(key, 'json');
     } catch (err) {
-      console.error(`cache read failed: ${key}`, err);
+      this.log.emit('cache.read_failed', { prefix: prefixOf(key), key, error: err });
       return null;
     }
   }
@@ -50,8 +55,10 @@ export class Cache {
     const ttl = Math.max(KV_MIN_TTL_S, Math.ceil((retainUntil - now) / 1000));
     try {
       await this.kv.put(key, JSON.stringify(entry), { expirationTtl: ttl });
+      // Counted against KV's 1,000 writes a day (PLAN-v1.md §11.5).
+      this.log.emit('cache.written', { prefix: prefixOf(key) });
     } catch (err) {
-      console.error(`cache write failed: ${key}`, err);
+      this.log.emit('cache.write_failed', { prefix: prefixOf(key), key, error: err });
     }
   }
 
@@ -75,7 +82,7 @@ export class Cache {
       loaded = await load();
     } catch (err) {
       if (entry && isUpstreamPressure(err)) {
-        console.warn(`serving stale: ${key}`);
+        this.log.emit('cache.stale_served', { prefix: prefixOf(key), key });
         return onStale(entry.value);
       }
       throw err;

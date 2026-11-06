@@ -29,7 +29,8 @@ export function createApp({ provider, now = Date.now, sink }: AppDeps) {
     c.set('log', logger(c));
     await next();
   });
-  const service = (c: AppContext) => new ClipService(provider, new Cache(c.env.CACHE, now), c.env.XBL_API_KEY, now);
+  const service = (c: AppContext) =>
+    new ClipService(provider, new Cache(c.env.CACHE, now, c.var.log), { apiKey: c.env.XBL_API_KEY, log: c.var.log }, now);
 
   app.use(
     '*',
@@ -44,7 +45,11 @@ export function createApp({ provider, now = Date.now, sink }: AppDeps) {
   const rateLimit = async (c: AppContext, next: () => Promise<void>) => {
     const ip = c.req.header('cf-connecting-ip') ?? 'unknown';
     const { success } = await c.env.RATE_LIMITER.limit({ key: ip });
-    if (!success) throw new AppError('RATE_LIMITED', '60');
+    if (!success) {
+      // No client identifier: counting distinct clients would need a salted hash (PLAN-v1.md §11.3).
+      c.var.log.emit('inbound.rate_limited', { method: c.req.method, path: c.req.path });
+      throw new AppError('RATE_LIMITED', '60');
+    }
     await next();
   };
   app.use('/api/*', rateLimit);
@@ -136,7 +141,10 @@ export function createApp({ provider, now = Date.now, sink }: AppDeps) {
 
   app.onError((err, c) => {
     const appErr = err instanceof AppError ? err : new AppError('INTERNAL_ERROR');
-    if (!(err instanceof AppError)) (c.get('log') ?? logger(c)).emit('app.unhandled', { error: err, method: c.req.method, path: c.req.path });
+    const log = c.get('log') ?? logger(c);
+    if (!(err instanceof AppError)) log.emit('app.unhandled', { error: err, method: c.req.method, path: c.req.path });
+    if (appErr.code === 'INVALID_IDENTIFIER') log.emit('request.invalid', { path: c.req.path });
+    if (appErr.status >= 500) log.emit('request.failed', { code: appErr.code, status: appErr.status, method: c.req.method, path: c.req.path });
     if (appErr.retryAfter) c.header('Retry-After', appErr.retryAfter);
     return c.json(appErr.toBody(), appErr.status);
   });

@@ -23,7 +23,7 @@ import {
   type RawStoreDetails,
   type RawTitle,
 } from './openxbl-transform';
-import type { IXboxDataProvider } from './types';
+import type { IXboxDataProvider, UpstreamCall } from './types';
 
 const BASE_URL = 'https://api.xbl.io/v2';
 
@@ -36,34 +36,52 @@ const isClipsPrivate = (content: unknown) =>
 /** Enough of a title history's end to hold `achievementSummary` and the envelope's code. */
 const TITLES_TAIL_BYTES = 512;
 
-/** Below this many remaining requests in the hourly plan budget, every call logs a warning. */
+/** Below this many remaining requests in the hourly plan budget, every call logs `upstream.budget_low`. */
 const LOW_BUDGET_WARNING = 20;
 
 interface UpstreamResult {
   status: number;
   content: unknown;
+  /** The endpoint's name for logs: never carries a gamertag or XUID. */
+  endpoint: string;
+}
+
+/**
+ * Which limit an upstream 429 hit (PLAN-v1.md §11.5). OpenXBL's hourly budget
+ * leaves none remaining; with budget left, it was Microsoft's per-user limit,
+ * which clears in seconds.
+ */
+function limitHit(remaining: number | null): 'budget' | 'per-user' | 'unknown' {
+  if (remaining === null) return 'unknown';
+  return remaining > 0 ? 'per-user' : 'budget';
+}
+
+function budgetRemaining(res: Response): number | null {
+  const header = res.headers.get('x-ratelimit-remaining');
+  const value = header === null ? NaN : Number(header);
+  return Number.isFinite(value) ? value : null;
 }
 
 export class OpenXblProvider implements IXboxDataProvider {
   constructor(private readonly fetchImpl: typeof fetch = (...args) => fetch(...args)) {}
 
-  async resolveGamertag(apiKey: string, gamertag: string): Promise<string | null> {
-    const res = await this.get(apiKey, `/search/${encodeURIComponent(gamertag)}`);
+  async resolveGamertag(call: UpstreamCall, gamertag: string): Promise<string | null> {
+    const res = await this.get(call, 'search', `/search/${encodeURIComponent(gamertag)}`);
     if (res.status === 404) return null;
-    this.expectOk(res, 'search');
+    this.expectOk(call, res);
     return pickSearchMatch(res.content as RawSearch, gamertag);
   }
 
-  async getProfile(apiKey: string, xuid: string): Promise<XboxUserProfile | null> {
-    const res = await this.get(apiKey, `/account/${xuid}`);
+  async getProfile(call: UpstreamCall, xuid: string): Promise<XboxUserProfile | null> {
+    const res = await this.get(call, 'account', `/account/${xuid}`);
     if (res.status === 404) return null;
-    this.expectOk(res, 'account');
+    this.expectOk(call, res);
     return toProfile(res.content as RawAccount);
   }
 
-  async getClips(apiKey: string, xuid: string, continuationToken?: string): Promise<ClipPage> {
+  async getClips(call: UpstreamCall, xuid: string, continuationToken?: string): Promise<ClipPage> {
     const query = continuationToken ? `?continuationToken=${encodeURIComponent(continuationToken)}` : '';
-    const res = await this.get(apiKey, `/dvr/gameclips/${xuid}${query}`);
+    const res = await this.get(call, 'gameclips', `/dvr/gameclips/${xuid}${query}`);
     // Privacy has its own answer (O3, PLAN-v1.md §10): an inner 403 whose content is
     // Xbox's GameMedia error 10209. Any other 403 or 404 has been seen to be
     // intermittent for players whose clips are public (2026-10-19, a 200 again
@@ -73,23 +91,24 @@ export class OpenXblProvider implements IXboxDataProvider {
       return { clips: [], continuationToken: null, access: 'restricted' };
     }
     if (res.status === 403 || res.status === 404) {
-      console.warn(`upstream gameclips returned ${res.status} for ${xuid}: ${JSON.stringify(res.content)?.slice(0, 300)}`);
+      call.log.emit('upstream.clips_transient', { status: res.status, xuid });
+      call.log.emit('upstream.error_body', { endpoint: res.endpoint, status: res.status, body: res.content });
       throw new AppError('UPSTREAM_ERROR');
     }
-    this.expectOk(res, 'gameclips');
+    this.expectOk(call, res);
     return toClipPage(res.content as RawClipList);
   }
 
-  async getMostPlayedGames(apiKey: string): Promise<Game[]> {
-    const res = await this.get(apiKey, '/marketplace/most-played');
-    this.expectOk(res, 'marketplace/most-played');
+  async getMostPlayedGames(call: UpstreamCall): Promise<Game[]> {
+    const res = await this.get(call, 'marketplace/most-played', '/marketplace/most-played');
+    this.expectOk(call, res);
     return toMostPlayed(res.content as RawMostPlayed);
   }
 
   /** Store screenshots for one product. One product per call: a detail response is about 100 KB. */
-  async getScreenshots(apiKey: string, productId: string): Promise<Screenshot[]> {
-    const res = await this.get(apiKey, '/marketplace/details', { products: productId });
-    this.expectOk(res, 'marketplace/details');
+  async getScreenshots(call: UpstreamCall, productId: string): Promise<Screenshot[]> {
+    const res = await this.get(call, 'marketplace/details', '/marketplace/details', { products: productId });
+    this.expectOk(call, res);
     return toScreenshots(res.content as RawStoreDetails, productId);
   }
 
@@ -98,22 +117,22 @@ export class OpenXblProvider implements IXboxDataProvider {
    * games use their own endpoint, which lists only unlocked achievements.
    */
   async getAchievements(
-    apiKey: string,
+    call: UpstreamCall,
     xuid: string,
     titleId: string,
     xbox360: boolean,
   ): Promise<{ titleName: string | null; achievements: Achievement[] } | null> {
     const path = xbox360 ? `/achievements/x360/${xuid}/title/${titleId}` : `/achievements/player/${xuid}/${titleId}`;
-    const res = await this.get(apiKey, path);
+    const res = await this.get(call, xbox360 ? 'achievements/x360' : 'achievements', path);
     if (res.status === 403 || res.status === 404) return null;
-    this.expectOk(res, 'achievements');
+    this.expectOk(call, res);
     return toAchievements(res.content as RawAchievementList, xbox360);
   }
 
   /** Minutes played in one game, for one or more players at once. */
-  async getMinutesPlayed(apiKey: string, xuids: string[], titleId: string): Promise<Record<string, number>> {
-    const res = await this.get(apiKey, '/player/stats', { xuids, stats: [{ name: 'MinutesPlayed', titleId }] });
-    this.expectOk(res, 'player/stats');
+  async getMinutesPlayed(call: UpstreamCall, xuids: string[], titleId: string): Promise<Record<string, number>> {
+    const res = await this.get(call, 'player/stats', '/player/stats', { xuids, stats: [{ name: 'MinutesPlayed', titleId }] });
+    this.expectOk(call, res);
     return toMinutesPlayed(res.content as RawPlayerStats);
   }
 
@@ -124,9 +143,9 @@ export class OpenXblProvider implements IXboxDataProvider {
    * arrived (PLAN-v1.md §5). A hidden history (403/404) is not an error: the
    * facts are simply unavailable.
    */
-  async getTitleHistory(apiKey: string, xuid: string): Promise<TitleHistory | null> {
+  async getTitleHistory(call: UpstreamCall, xuid: string): Promise<TitleHistory | null> {
     const path = `/titles/${xuid}`;
-    const res = await this.fetchTitles(apiKey, path);
+    const res = await this.fetchTitles(call, path);
 
     const scanner = new TitlesScanner(CAREER_GAMES);
     const reader = res.body?.getReader();
@@ -148,7 +167,7 @@ export class OpenXblProvider implements IXboxDataProvider {
       // The whole body arrived: it may be an error envelope rather than a history.
       scanner.push(decoder.decode());
       scanner.finish();
-      if (!this.titlesVisible(res, path, scanner.text)) return null;
+      if (!this.titlesVisible(call, res, scanner.text)) return null;
     }
 
     const { titles, more } = scanner.result();
@@ -160,19 +179,19 @@ export class OpenXblProvider implements IXboxDataProvider {
    * (PLAN-v1.md §5). The whole body has to arrive, but only its last bytes are
    * kept and decoded, so the titles are never parsed.
    */
-  async getMythics(apiKey: string, xuid: string): Promise<number | null> {
+  async getMythics(call: UpstreamCall, xuid: string): Promise<number | null> {
     const path = `/titles/${xuid}`;
-    const res = await this.fetchTitles(apiKey, path);
+    const res = await this.fetchTitles(call, path);
     let tail: ArrayBuffer;
     try {
       // Buffered by the runtime: looping over the chunks here took 26 ms of CPU.
       tail = (await res.arrayBuffer()).slice(-TITLES_TAIL_BYTES);
     } catch (err) {
-      console.error(`upstream body failed: GET ${path}`, err);
+      call.log.emit('upstream.unreachable', { method: 'GET', endpoint: 'titles', stage: 'body', error: err });
       throw new AppError('UPSTREAM_ERROR');
     }
     const text = new TextDecoder().decode(tail);
-    if (!this.titlesVisible(res, path, text)) return null;
+    if (!this.titlesVisible(call, res, text)) return null;
     return mythicsFromTail(text);
   }
 
@@ -181,35 +200,63 @@ export class OpenXblProvider implements IXboxDataProvider {
    * parses the whole title history, about 1 MB, so it runs only when a visitor
    * asks for it (PLAN-v1.md §5).
    */
-  async getNearestCompletion(apiKey: string, xuid: string): Promise<NearestCompletion | null> {
+  async getNearestCompletion(call: UpstreamCall, xuid: string): Promise<NearestCompletion | null> {
     const path = `/titles/${xuid}`;
-    const res = await this.fetchTitles(apiKey, path);
+    const res = await this.fetchTitles(call, path);
     let text: string;
     try {
       text = await res.text();
     } catch (err) {
-      console.error(`upstream body failed: GET ${path}`, err);
+      call.log.emit('upstream.unreachable', { method: 'GET', endpoint: 'titles', stage: 'body', error: err });
       throw new AppError('UPSTREAM_ERROR');
     }
-    if (!this.titlesVisible(res, path, text.slice(-TITLES_TAIL_BYTES))) return null;
+    if (!this.titlesVisible(call, res, text.slice(-TITLES_TAIL_BYTES))) return null;
     try {
       const raw = JSON.parse(text) as { content?: { titles?: RawTitle[] } };
       return toNearestCompletion(raw.content?.titles ?? []);
     } catch (err) {
-      console.error(`upstream body unreadable: GET ${path}`, err);
+      call.log.emit('upstream.unexpected_shape', { endpoint: 'titles', error: err });
       throw new AppError('UPSTREAM_ERROR');
     }
   }
 
-  private async fetchTitles(apiKey: string, path: string): Promise<Response> {
+  private async fetchTitles(call: UpstreamCall, path: string): Promise<Response> {
+    const started = Date.now();
+    let res: Response;
     try {
-      return await this.fetchImpl(BASE_URL + path, {
-        headers: { 'X-Authorization': apiKey, Accept: 'application/json' },
+      res = await this.fetchImpl(BASE_URL + path, {
+        headers: { 'X-Authorization': call.apiKey, Accept: 'application/json' },
       });
     } catch (err) {
-      console.error(`upstream unreachable: GET ${path}`, err);
+      call.log.emit('upstream.unreachable', { method: 'GET', endpoint: 'titles', error: err });
       throw new AppError('UPSTREAM_ERROR');
     }
+    // The status here is the outer one; an error envelope's inner code is settled
+    // once the body is read (titlesVisible).
+    this.recordCall(call, 'GET', 'titles', res, started);
+    return res;
+  }
+
+  /** One `upstream.call` per call, and `upstream.budget_low` while the hourly budget is nearly spent. */
+  private recordCall(call: UpstreamCall, method: string, endpoint: string, res: Response, started: number): void {
+    const remaining = budgetRemaining(res);
+    call.log.emit('upstream.call', { method, endpoint, status: res.status, remaining, ms: Date.now() - started });
+    if (remaining !== null && remaining < LOW_BUDGET_WARNING) call.log.emit('upstream.budget_low', { remaining });
+  }
+
+  private rateLimited(call: UpstreamCall, method: string, endpoint: string, res: Response): AppError {
+    const remaining = budgetRemaining(res);
+    const retryAfter = res.headers.get('retry-after') ?? undefined;
+    call.log.emit('upstream.rate_limited', { method, endpoint, limit: limitHit(remaining), remaining, retryAfter });
+    return new AppError('UPSTREAM_RATE_LIMIT', retryAfter);
+  }
+
+  /** A failed status: its own event, the body as a separate `info` record (PLAN-v1.md §11.3). */
+  private failed(call: UpstreamCall, endpoint: string, status: number, body: unknown): AppError {
+    // A rejected key takes the whole site down until it is fixed, so it is told apart.
+    call.log.emit(status === 401 || status === 403 ? 'upstream.auth_failed' : 'upstream.error', { endpoint, status });
+    call.log.emit('upstream.error_body', { endpoint, status, body });
+    return new AppError('UPSTREAM_ERROR');
   }
 
   /**
@@ -217,44 +264,35 @@ export class OpenXblProvider implements IXboxDataProvider {
    * it may be an error envelope rather than a history. False when the history is
    * hidden (403/404), which is not an error.
    */
-  private titlesVisible(res: Response, path: string, text: string): boolean {
+  private titlesVisible(call: UpstreamCall, res: Response, text: string): boolean {
     const inner = /"code"\s*:\s*(\d{3})\s*\}\s*$/.exec(text);
     const status = inner ? Number(inner[1]) : res.status;
     if (status === 403 || status === 404) return false;
-    if (status === 429) {
-      console.warn(`upstream rate limit: GET ${path}`);
-      throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
-    }
-    if (status < 200 || status >= 300) {
-      console.error(`upstream ${status}: GET ${path}: ${text.slice(0, 500)}`);
-      throw new AppError('UPSTREAM_ERROR');
-    }
+    if (status === 429) throw this.rateLimited(call, 'GET', 'titles', res);
+    if (status < 200 || status >= 300) throw this.failed(call, 'titles', status, text);
     return true;
   }
 
   /** GET, or POST with a JSON body when `body` is given. */
-  private async get(apiKey: string, path: string, body?: unknown): Promise<UpstreamResult> {
+  private async get(call: UpstreamCall, endpoint: string, path: string, body?: unknown): Promise<UpstreamResult> {
     const method = body === undefined ? 'GET' : 'POST';
+    const started = Date.now();
     let res: Response;
     try {
       res = await this.fetchImpl(BASE_URL + path, {
         method,
         headers: {
-          'X-Authorization': apiKey,
+          'X-Authorization': call.apiKey,
           Accept: 'application/json',
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
     } catch (err) {
-      console.error(`upstream unreachable: ${method} ${path}`, err);
+      call.log.emit('upstream.unreachable', { method, endpoint, error: err });
       throw new AppError('UPSTREAM_ERROR');
     }
-
-    const remaining = Number(res.headers.get('x-ratelimit-remaining'));
-    if (res.headers.has('x-ratelimit-remaining') && remaining < LOW_BUDGET_WARNING) {
-      console.warn(`upstream budget low: ${remaining} requests left this hour`);
-    }
+    this.recordCall(call, method, endpoint, res, started);
 
     const text = await res.text();
     let parsed: unknown = null;
@@ -274,22 +312,13 @@ export class OpenXblProvider implements IXboxDataProvider {
       if (typeof code === 'number') status = code;
     }
 
-    if (status === 429) {
-      console.warn(`upstream rate limit: ${method} ${path}`);
-      throw new AppError('UPSTREAM_RATE_LIMIT', res.headers.get('retry-after') ?? undefined);
-    }
-    if (status >= 500) {
-      console.error(`upstream ${status}: ${method} ${path}: ${text.slice(0, 500)}`);
-      throw new AppError('UPSTREAM_ERROR');
-    }
-    return { status, content };
+    if (status === 429) throw this.rateLimited(call, method, endpoint, res);
+    if (status >= 500) throw this.failed(call, endpoint, status, text);
+    return { status, content, endpoint };
   }
 
-  private expectOk(res: UpstreamResult, what: string): void {
-    if (res.status < 200 || res.status >= 300) {
-      // e.g. 401 from a revoked key. A server-side fault, not the client's.
-      console.error(`upstream ${what} returned ${res.status}: ${JSON.stringify(res.content)?.slice(0, 500)}`);
-      throw new AppError('UPSTREAM_ERROR');
-    }
+  /** Any status the endpoint's own handling didn't expect, e.g. 401 from a revoked key. A server-side fault, not the client's. */
+  private expectOk(call: UpstreamCall, res: UpstreamResult): void {
+    if (res.status < 200 || res.status >= 300) throw this.failed(call, res.endpoint, res.status, res.content);
   }
 }

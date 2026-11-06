@@ -954,7 +954,7 @@ working backlog; `CLAUDE.md` is the map of the code.
 - **Locking the API to the site** (§6): brought forward 2026-11-05;
   phases 1 and 2 done the same day, phase 3 under way.
 - **Observability** (§11): API only, alerting by Cloudflare monitors;
-  the logger is built (§11.6 step 2); the remaining call sites are next.
+  logging is on events (§11.6 steps 2-3); the monitors are next.
 
 ### Closed
 
@@ -1146,8 +1146,18 @@ field, not through the URL.
 2. **Done 2026-11-06.** Logger, event registry, `LOG_LEVEL` and the
    tests in §11.4; the two call sites in `app.ts` moved onto it. No change to behaviour beyond
    log format.
-3. Move the remaining call sites (cache, provider) onto events, and add
-   the missing ones from §11.5. The provider and the cache get the
-   logger the way they get the API key and the clock.
+3. **Done 2026-11-06.** Every call site is on events, and the missing
+   ones from §11.5 are added. The provider gets the logger with the API
+   key, in an `UpstreamCall` passed to each method; the cache gets it in
+   its constructor, beside the clock. Where it differs from §11.5:
+   - `upstream.budget_low` fires on every call while low, not once an
+     hour: that would need state across requests, and the monitor's
+     daily repeat already keeps the email to one.
+   - `inbound.rate_limited` carries no client identifier, since a salted
+     hash needs a salt secret. Add one if distinct clients are wanted.
+   - `upstream.unexpected_shape` covers the full parse of the title
+     history only. The transforms' silent fallbacks (the Mythics tail,
+     for one) stay silent for now.
+   - Upstream bodies are trimmed to 200 characters, not 500.
 4. Create the monitors from the registry's alert-marked events.
 5. Two weeks of real data; tune the thresholds.

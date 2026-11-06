@@ -1,3 +1,4 @@
+import type { UpstreamCall } from '../src/provider/types';
 import type { Achievement, ClipPage, Game, GameClipInfo, NearestCompletion, Screenshot, TitleHistory, XboxUserProfile } from '../src/domain';
 import { AppError } from '../src/errors';
 import type { IXboxDataProvider } from '../src/provider/types';
@@ -30,19 +31,19 @@ export class FakeProvider implements IXboxDataProvider {
   /** When set, getMinutesPlayed throws this (other calls unaffected). */
   minutesFailWith: AppError | null = null;
 
-  async resolveGamertag(_apiKey: string, gamertag: string): Promise<string | null> {
+  async resolveGamertag(_call: UpstreamCall, gamertag: string): Promise<string | null> {
     this.calls.resolveGamertag++;
     this.maybeFail();
     return this.gamertags.get(gamertag.toLowerCase()) ?? null;
   }
 
-  async getProfile(_apiKey: string, xuid: string): Promise<XboxUserProfile | null> {
+  async getProfile(_call: UpstreamCall, xuid: string): Promise<XboxUserProfile | null> {
     this.calls.getProfile++;
     this.maybeFail();
     return this.profiles.get(xuid) ?? null;
   }
 
-  async getClips(_apiKey: string, xuid: string, continuationToken?: string): Promise<ClipPage> {
+  async getClips(_call: UpstreamCall, xuid: string, continuationToken?: string): Promise<ClipPage> {
     this.calls.getClips++;
     this.maybeFail();
     const pages = this.clipPages.get(xuid) ?? [{ clips: [], continuationToken: null, access: 'public' as const }];
@@ -56,25 +57,25 @@ export class FakeProvider implements IXboxDataProvider {
     return structuredClone(this.mostPlayed);
   }
 
-  async getTitleHistory(_apiKey: string, xuid: string): Promise<TitleHistory | null> {
+  async getTitleHistory(_call: UpstreamCall, xuid: string): Promise<TitleHistory | null> {
     this.calls.getTitleHistory++;
     this.maybeFail();
     return structuredClone(this.histories.get(xuid) ?? null);
   }
 
-  async getMythics(_apiKey: string, xuid: string): Promise<number | null> {
+  async getMythics(_call: UpstreamCall, xuid: string): Promise<number | null> {
     this.calls.getMythics++;
     this.maybeFail();
     return this.mythics.get(xuid) ?? null;
   }
 
-  async getNearestCompletion(_apiKey: string, xuid: string): Promise<NearestCompletion | null> {
+  async getNearestCompletion(_call: UpstreamCall, xuid: string): Promise<NearestCompletion | null> {
     this.calls.getNearestCompletion++;
     this.maybeFail();
     return structuredClone(this.nearest.get(xuid) ?? null);
   }
 
-  async getAchievements(_apiKey: string, xuid: string, titleId: string, xbox360: boolean) {
+  async getAchievements(_call: UpstreamCall, xuid: string, titleId: string, xbox360: boolean) {
     this.calls.getAchievements++;
     this.achievementsAsked.push(xbox360);
     this.maybeFail();
@@ -82,13 +83,13 @@ export class FakeProvider implements IXboxDataProvider {
     return structuredClone(this.achievements.get(`${xuid}:${titleId}`) ?? null);
   }
 
-  async getScreenshots(_apiKey: string, productId: string): Promise<Screenshot[]> {
+  async getScreenshots(_call: UpstreamCall, productId: string): Promise<Screenshot[]> {
     this.calls.getScreenshots++;
     this.maybeFail();
     return structuredClone(this.screenshots.get(productId) ?? []);
   }
 
-  async getMinutesPlayed(_apiKey: string, xuids: string[], titleId: string): Promise<Record<string, number>> {
+  async getMinutesPlayed(_call: UpstreamCall, xuids: string[], titleId: string): Promise<Record<string, number>> {
     this.calls.getMinutesPlayed++;
     this.maybeFail();
     if (this.minutesFailWith) throw this.minutesFailWith;
