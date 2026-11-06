@@ -727,6 +727,18 @@ change.
 same day instead of after the report-only soak, by decision: if visitors
 report failures, they are handled then.
 
+**AI Crawl Control: every AI crawler blocked** (2026-11-06, dashboard,
+ahead of phase 5). Prompted by ChatGPT's browsing agent loading clip
+pages about 70 times an hour: a real headless browser, so it passed the
+same-origin check, but it identifies itself (`signature-agent:
+"https://chatgpt.com"`, verified bot category "AI Assistant"). Checked
+after: the site and the API guard unchanged, a GPTBot user agent
+refused, Discord's link previewer allowed. Not yet known whether the
+setting covers that signed agent; if it keeps reaching the Worker, add
+a WAF custom rule blocking `/api/` requests whose `signature-agent`
+contains `chatgpt.com`. If a chat app's link previews stop working,
+check this setting first.
+
 Each phase ships alone and can be undone in minutes; the `workers.dev`
 address stays up until phase 4, so the site never depends on a step that
 isn't proven.
@@ -1076,7 +1088,7 @@ real data.
 | :--- | :--- | :--- | :--- |
 | Every upstream call | Nothing | `upstream.call` `info`: endpoint pattern, status, duration, budget remaining. At most 150 an hour, so cheap, and it gives budget use, latency and error rate in one stream | Day's lowest remaining budget, and calls by endpoint, in every email sent |
 | Budget low (under 20 left this hour) | `warn` on every call while low | `upstream.budget_low` `warn`, once per hour it happens | Any |
-| Upstream 429 | `warn` | `upstream.rate_limited` `warn` | Any |
+| Upstream 429 | `warn` with the path only, so it can't tell OpenXBL's hourly budget running out from Microsoft's per-user burst limit (§2), which clears in seconds | `upstream.rate_limited` `warn` with `X-RateLimit-Remaining` and `Retry-After`: a remaining budget above zero, or a short `Retry-After`, means Microsoft's limit | Any, split by which limit |
 | Key rejected (401, or 403 outside clips) | Lumped into a generic `error` with the body | `upstream.auth_failed` `error`: its own event, because it means the whole site is down until the key is fixed | Any, at the top of the email |
 | Upstream 5xx or other unexpected status | `error` with up to 500 characters of body | `upstream.error` `error` (endpoint, status) plus `upstream.error_body` `info` (trimmed body) | Over 5 in a day |
 | Upstream unreachable | `error` with the error | `upstream.unreachable` `error` | Over 5 in a day |
@@ -1097,6 +1109,13 @@ real data.
 The two silent gaps that matter most are the rate-limit refusals and the
 unknown gamertags: both are the early signs of abuse that §6 says to watch
 for before locking the API down, and neither leaves a trace today.
+
+**Request URLs are masked in Workers Logs.** Seen 2026-11-06: a clip
+request answered `200` was logged as `/clips/<xuid>/REDACTED`, though
+the route refuses anything but a UUID with `400`; the same entry's
+`referer` kept the UUID. Presumably Cloudflare hides UUID-shaped
+segments as likely tokens (not confirmed). Any event that needs a clip
+ID logs it as its own field, not through the URL.
 
 ### 11.5 Spike, first in the work
 
