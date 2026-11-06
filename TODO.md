@@ -24,14 +24,14 @@ any trade-off made.
       per IP, checked only before an upstream call; plus tighter limits
       on `/career`, `/achievements` and `/nearest-completion`. Tune with
       real refusals.
-- [ ] **Observability, across the API and the UI.** API plan in PLAN §11;
-      start with its spike (§11.5). The same item is in the UI's TODO.
-      Today Workers Logs keep a few days of logs and nothing alerts. The
-      plan should cover alerts on: CPU limit breaches (`exceededCpu`), the
-      upstream budget running low (`X-RateLimit-Remaining`), rate-limit
-      refusals, upstream error rates, and junk gamertag lookups. On the UI
-      side, browser errors and user agents reported to a monitoring service,
-      on a free tier if one fits. Several items below wait on this data.
+- [ ] **Observability** (PLAN §11). API only: the UI's side was
+      dropped 2026-11-06. Alerting by Cloudflare's own monitors on
+      Workers Logs, emailed at most daily per kind of problem; no
+      summary Worker. Next: the logger and event registry (§11.6 step
+      2), then the remaining call sites, then the monitors. Watches CPU
+      (`CpuTimeMs`), KV writes per day, the upstream budget, rate-limit
+      refusals and junk gamertag lookups. Several items below wait on
+      this data.
 
 ## Later
 
