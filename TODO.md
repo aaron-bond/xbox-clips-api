@@ -35,6 +35,25 @@ any trade-off made.
       limit, or a request flood. Then Bot Fight Mode, then a WAF rate
       rule, one at a time; re-test local UI development and clip link
       previews after each. Turnstile only if abuse continues.
+- [ ] **Local Seq instance for logs and alerting** (potential feature;
+      an alternative to the options in PLAN §11.2). Cloudflare's own log
+      export (Logpush, Tail Workers, OpenTelemetry) needs Workers Paid,
+      but a poller can pull for free. A container on a home Docker host
+      runs a small script every 5-15 minutes. It calls the Workers
+      Observability query API with a read-only token, converts each record
+      to CLEF and posts it to Seq. Seq's free single-user licence has
+      alerts with email. That gives longer history than Workers Logs keeps
+      and catches CPU kills (`$workers.outcome`), with no Worker change
+      and no upstream cost.
+      - First: confirm the query API on Free with one query, using a token
+        with only Workers Observability read.
+      - Overlap each pull and drop records already sent, so a restart
+        neither loses nor repeats any.
+      - Page through results if a busy window is larger than one page; the
+        API's limits are unchecked.
+      - Have Seq alert when the poller goes quiet.
+      - Missed pulls are recoverable only within Workers Logs' retention.
+      - Check the daily event count against Workers Logs' Free cap.
 - [ ] Negative-cache unknown gamertags for a short time. Each junk lookup
       currently spends a search call from the shared budget. Decide once
       observability shows how often it happens. Each entry is a KV write,
