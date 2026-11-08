@@ -1084,7 +1084,7 @@ Sources: Cloudflare's "8 major updates to Cloudflare Observability"
   | `error` | Something failed that we should fix or that broke a response | on |
   | `warn` | Degraded but handled: rate limits, stale data served, budget low | on |
   | `info` | The detail behind a warn or error (a trimmed upstream body, as its own event), and low-volume facts worth counting | on |
-  | `debug` | Cache hits and misses, timings, full upstream payloads | off |
+  | `debug` | Timings, full upstream payloads | off |
 
   Set by a `LOG_LEVEL` var: `info` in `wrangler.jsonc`, `debug` in
   `.dev.vars`. Diagnostic detail never rides on the warn or error record
@@ -1154,7 +1154,7 @@ alerting on.
 | Per-IP rate-limit refusal | Nothing | `inbound.rate_limited` `warn` with a hashed client ID | Over 50 in a day, with distinct clients |
 | Unknown gamertag (spends a search call) | Nothing | `player.not_found` `info`, kind (gamertag or XUID) only, not the value | Over 100 in a day, the signal for negative caching (TODO) |
 | Invalid identifier (400) | Nothing | `request.invalid` `info` | Only alongside other abuse signals |
-| Stale data served under pressure | `warn` with full key | `cache.stale_served` `info` with key prefix: it is the designed degradation, not a fault | Query |
+| Cache reads, and stale data served under pressure | Stale serving only, `warn` with full key | `cache.read` `info` per KV read: key prefix and `outcome` (`hit`, `miss`, `expired`, `stale`). Hits against `cache.written` give a hit rate per kind; the count is also KV's 100,000 reads a day. Added 2026-11-08, replacing `cache.stale_served`; about 800 bytes a record, one to three per request | Query; reads over 70,000 in a day if alerting is built |
 | Clip expired, not found, game not found | Nothing | `debug` only; normal outcomes | No |
 
 The two silent gaps that matter most are the rate-limit refusals and the

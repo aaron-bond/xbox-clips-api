@@ -121,22 +121,37 @@ describe('logging', () => {
     const res = await get('/api/v1/games/most-played');
     expect(res.status).toBe(500);
     expect(await res.text()).not.toContain('boom');
-    expect(records.map((r) => r.event)).toEqual(['app.unhandled', 'request.failed']);
-    expect(records[1]).toMatchObject({ code: 'INTERNAL_ERROR', status: 500 });
-    expect(records[0]).toMatchObject({ event: 'app.unhandled', level: 'error', message: 'app.unhandled', alert: true, method: 'GET', path: '/api/v1/games/most-played' });
-    expect(records[0]!.error).toMatchObject({ name: 'TypeError', message: 'boom while calling with [secret]' });
-    expect((records[0]!.error as { stack?: string }).stack).toBeTypeOf('string');
+    expect(records.map((r) => r.event)).toEqual(['cache.read', 'app.unhandled', 'request.failed']);
+    expect(records[2]).toMatchObject({ code: 'INTERNAL_ERROR', status: 500 });
+    expect(records[1]).toMatchObject({ event: 'app.unhandled', level: 'error', message: 'app.unhandled', alert: true, method: 'GET', path: '/api/v1/games/most-played' });
+    expect(records[1]!.error).toMatchObject({ name: 'TypeError', message: 'boom while calling with [secret]' });
+    expect((records[1]!.error as { stack?: string }).stack).toBeTypeOf('string');
     expect(JSON.stringify(records)).not.toContain(SENTINEL_KEY);
   });
 
-  it('logs only the cache write for an ordinary request', async () => {
-    const { get, provider, records } = setup();
+  it('logs each cache read with its outcome, and each write', async () => {
+    const { get, provider, records, advance } = setup();
     provider.mostPlayed = [];
+    const read = (outcome: string) => ({ event: 'cache.read', level: 'info', message: 'cache.read', prefix: 'games', outcome });
+    const written = { event: 'cache.written', level: 'info', message: 'cache.written', alert: true, prefix: 'games' };
+
     await get('/api/v1/games/most-played');
-    expect(records).toEqual([{ event: 'cache.written', level: 'info', message: 'cache.written', alert: true, prefix: 'games' }]);
+    expect(records).toEqual([read('miss'), written]);
+
     records.length = 0;
     await get('/api/v1/games/most-played');
-    expect(records).toEqual([]);
+    expect(records).toEqual([read('hit')]);
+
+    records.length = 0;
+    advance(7 * 60 * 60 * 1000); // past the 6-hour freshness window
+    provider.failWith = new AppError('UPSTREAM_RATE_LIMIT');
+    expect((await get('/api/v1/games/most-played')).status).toBe(200);
+    expect(records).toEqual([read('stale')]);
+
+    records.length = 0;
+    provider.failWith = null;
+    await get('/api/v1/games/most-played');
+    expect(records).toEqual([read('expired'), written]);
   });
 
   it('logs an inbound rate-limit refusal, without the client IP', async () => {
@@ -161,7 +176,7 @@ describe('logging', () => {
     provider.mostPlayed = [];
     const broken = { ...env.CACHE, get: async () => null, put: async () => Promise.reject(new Error('quota')) } as unknown as KVNamespace;
     expect((await get('/api/v1/games/most-played', {}, { CACHE: broken })).status).toBe(200);
-    expect(records).toMatchObject([{ event: 'cache.write_failed', level: 'error', message: 'cache.write_failed', alert: true, prefix: 'games', error: { message: 'quota' } }]);
+    expect(records.filter((r) => r.event !== 'cache.read')).toMatchObject([{ event: 'cache.write_failed', level: 'error', message: 'cache.write_failed', alert: true, prefix: 'games', error: { message: 'quota' } }]);
   });
 });
 

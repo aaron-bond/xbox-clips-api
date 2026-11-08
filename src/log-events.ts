@@ -19,7 +19,7 @@ export const EVENTS = {
   'cache.read_failed': { level: 'error', alert: 'any' },
   'cache.write_failed': { level: 'error', alert: 'any' },
   'cache.written': { level: 'info', alert: 'over 700 in a day (KV allows 1,000 writes a day)' },
-  'cache.stale_served': { level: 'info' },
+  'cache.read': { level: 'info' },
 
   // Upstream (OpenXBL)
   'upstream.call': { level: 'info' },

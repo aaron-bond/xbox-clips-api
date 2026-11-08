@@ -27,7 +27,7 @@ describe('createLogger', () => {
   it('drops records below the configured level', () => {
     const { records, log } = capture('warn');
     log.emit('upstream.call');
-    log.emit('cache.stale_served');
+    log.emit('cache.read');
     log.emit('upstream.rate_limited');
     log.emit('app.unhandled');
     expect(records.map((r) => r.event)).toEqual(['upstream.rate_limited', 'app.unhandled']);

@@ -33,13 +33,30 @@ export class Cache {
     private readonly log: Logger,
   ) {}
 
+  /** A plain read, whatever the entry's freshness: logged as a hit if there is one. */
   async read<T>(key: string): Promise<CacheEntry<T> | null> {
+    const entry = await this.get<T>(key);
+    this.logRead(key, entry ? 'hit' : 'miss');
+    return entry;
+  }
+
+  private async get<T>(key: string): Promise<CacheEntry<T> | null> {
     try {
       return await this.kv.get<CacheEntry<T>>(key, 'json');
     } catch (err) {
       this.log.emit('cache.read_failed', { prefix: prefixOf(key), key, error: err });
       return null;
     }
+  }
+
+  /**
+   * One `cache.read` per KV read, so reads can be set against writes and against
+   * KV's 100,000 reads a day (PLAN-v1.md §11.5). `expired`: an entry past its
+   * freshness, refetched; `stale`: one served anyway because upstream was under
+   * pressure.
+   */
+  private logRead(key: string, outcome: 'hit' | 'miss' | 'expired' | 'stale'): void {
+    this.log.emit('cache.read', { prefix: prefixOf(key), outcome });
   }
 
   /**
@@ -74,19 +91,24 @@ export class Cache {
     load: () => Promise<Loaded<T> | null>,
     onStale: (value: T) => T = (v) => v,
   ): Promise<T | null> {
-    const entry = await this.read<T>(key);
-    if (entry && this.now() < entry.freshUntil) return entry.value;
+    const entry = await this.get<T>(key);
+    if (entry && this.now() < entry.freshUntil) {
+      this.logRead(key, 'hit');
+      return entry.value;
+    }
 
     let loaded: Loaded<T> | null;
     try {
       loaded = await load();
     } catch (err) {
       if (entry && isUpstreamPressure(err)) {
-        this.log.emit('cache.stale_served', { prefix: prefixOf(key), key });
+        this.logRead(key, 'stale');
         return onStale(entry.value);
       }
+      this.logRead(key, entry ? 'expired' : 'miss');
       throw err;
     }
+    this.logRead(key, entry ? 'expired' : 'miss');
     if (!loaded) return null;
     await this.write(key, loaded.value, loaded.freshUntil, loaded.retainUntil);
     return loaded.value;
