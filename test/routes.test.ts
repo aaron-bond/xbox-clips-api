@@ -72,8 +72,8 @@ describe('basics', () => {
 
   it('allows CORS only for configured origins', async () => {
     const { get } = setup();
-    const allowed = await get('/health', { Origin: 'http://localhost:5173' });
-    expect(allowed.headers.get('access-control-allow-origin')).toBe('http://localhost:5173');
+    const allowed = await get('/health', { Origin: 'https://xboxclips.io' });
+    expect(allowed.headers.get('access-control-allow-origin')).toBe('https://xboxclips.io');
     const denied = await get('/health', { Origin: 'https://evil.example' });
     expect(denied.headers.get('access-control-allow-origin')).toBeNull();
   });

@@ -732,7 +732,10 @@ change.
 
 **Status:** phases 1 and 2 done 2026-11-05. Phase 2 followed phase 1 the
 same day instead of after the report-only soak, by decision: if visitors
-report failures, they are handled then.
+report failures, they are handled then. Phase 3 ran to 2026-11-08; a few
+requests from old tabs were still reaching `workers.dev`, accepted rather
+than waited out (open tabs now move to new builds on their own: UI PLAN
+§15). Phase 4 done 2026-11-08.
 
 **AI Crawl Control: every AI crawler blocked** (2026-11-06, dashboard,
 ahead of phase 5). Prompted by ChatGPT's browsing agent loading clip
@@ -952,7 +955,7 @@ working backlog; `CLAUDE.md` is the map of the code.
 ### Open
 
 - **Locking the API to the site** (§6): brought forward 2026-11-05;
-  phases 1 and 2 done the same day, phase 3 under way.
+  phases 1 to 4 done by 2026-11-08; phase 5 next.
 - **Observability** (§11): API only; logging is on events (§11.6 steps
   2-3). How to alert is deferred: Free allows no custom monitors (§11.2).
 

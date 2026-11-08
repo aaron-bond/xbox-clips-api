@@ -14,12 +14,11 @@ any trade-off made.
 
 ## Next
 
-- [ ] **Lock the API to the site: phases 3-5** (PLAN §6, "Locking the
-      API to the site"). Phases 1 and 2 done (below). Next: watch site
-      traffic on the `workers.dev` host drain away, then set
-      `workers_dev` and `preview_urls` to false and drop the localhost
-      origin; then Bot Fight Mode and a WAF rate rule, one at a time.
-      Turnstile only if abuse continues.
+- [ ] **Lock the API to the site: phase 5** (PLAN §6, "Locking the
+      API to the site"). Phases 1-4 done (below). Next: Bot Fight Mode,
+      then a WAF rate rule, one at a time; re-test local UI development
+      and clip link previews after each. Turnstile only if abuse
+      continues.
 - [ ] **Upstream-miss limit** (PLAN §6). A second Rate Limiting binding
       per IP, checked only before an upstream call; plus tighter limits
       on `/career`, `/achievements` and `/nearest-completion`. Tune with
@@ -48,6 +47,12 @@ any trade-off made.
       under 20). Likely folded into the observability plan.
 
 ## Done
+
+- [x] **API closed to everything but the site** (2026-11-08, PLAN §6
+      phases 3-4). `workers_dev` and `preview_urls` off; the Worker is
+      reachable only through the UI's service binding. `localhost:5173`
+      dropped from `ALLOWED_ORIGINS`. Trade-off: a few old tabs were still
+      calling `workers.dev`; they fail until reloaded.
 
 - [x] **Nearest-completion cached 15 minutes per player** (2026-11-06,
       PLAN §5). Key `nearest:{xuid}`, kept no longer than fresh, so no

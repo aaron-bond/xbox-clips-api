@@ -4,6 +4,12 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
 
+  // No public address (PLAN-v1.md §6, phase 4): the Worker is reached only through
+  // the UI's service binding, at xboxclips.io/api/*. Rollback: set both to true and
+  // redeploy; the workers.dev address returns unchanged.
+  "workers_dev": false,
+  "preview_urls": false,
+
   // Workers Logs: keeps console output (upstream failures, unexpected statuses and
   // their response bodies) for a few days, viewable in the dashboard under the
   // Worker's Logs tab. Entries can include player XUIDs; they stay in this account.
@@ -14,10 +20,11 @@
   "vars": {
     // Lowest log level kept: info in production, debug locally via .dev.vars (PLAN-v1.md §11.3).
     "LOG_LEVEL": "info",
-    // Comma-separated: the UI's domain, its Pages hostname and preview deployments, and
-    // local UI development. `https://*.host` matches subdomains of host only. Never a bare
-    // wildcard: the shared upstream budget is worth protecting from other sites.
-    "ALLOWED_ORIGINS": "https://xboxclips.io,https://xbox-clips-ui.pages.dev,https://*.xbox-clips-ui.pages.dev,http://localhost:5173"
+    // Comma-separated: the UI's domain, its Pages hostname and preview deployments.
+    // `https://*.host` matches subdomains of host only. Never a bare wildcard. A
+    // backstop only: calls through the binding are same-origin, and local UI
+    // development goes through xboxclips.io/api.
+    "ALLOWED_ORIGINS": "https://xboxclips.io,https://xbox-clips-ui.pages.dev,https://*.xbox-clips-ui.pages.dev"
   },
 
   // Namespace "xbox-clips-api-cache". The binding name is what the code uses (env.CACHE).

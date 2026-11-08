@@ -7,7 +7,9 @@ for anyone. A Cloudflare Worker fetches clip data from
 and hands media URLs to the browser, which streams video straight from the
 Xbox CDN.
 
-Live at `https://xbox-clips-api.xbox-clips-api.workers.dev`.
+Served only at `https://xboxclips.io/api/*`, through the UI's Pages Function
+and a service binding. The Worker has no public address of its own
+(`workers_dev` and `preview_urls` are off; PLAN §6).
 
 The design and the reasoning behind it are in [PLAN-v1.md](PLAN-v1.md). The
 frontend is [xbox-clips-ui](https://github.com/aaron-bond/xbox-clips-ui).
