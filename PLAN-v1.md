@@ -735,7 +735,9 @@ same day instead of after the report-only soak, by decision: if visitors
 report failures, they are handled then. Phase 3 ran to 2026-11-08; a few
 requests from old tabs were still reaching `workers.dev`, accepted rather
 than waited out (open tabs now move to new builds on their own: UI PLAN
-§15). Phase 4 done 2026-11-08.
+§15). Phase 4 done 2026-11-08. Phase 5 deferred the same day until
+needed: on signs of abuse (rate-limit refusals or the upstream budget
+climbing, KV writes nearing the daily limit), not before.
 
 **AI Crawl Control: every AI crawler blocked** (2026-11-06, dashboard,
 ahead of phase 5). Prompted by ChatGPT's browsing agent loading clip
@@ -955,7 +957,7 @@ working backlog; `CLAUDE.md` is the map of the code.
 ### Open
 
 - **Locking the API to the site** (§6): brought forward 2026-11-05;
-  phases 1 to 4 done by 2026-11-08; phase 5 next.
+  phases 1 to 4 done by 2026-11-08; phase 5 deferred until needed.
 - **Observability** (§11): API only; logging is on events (§11.6 steps
   2-3). How to alert is deferred: Free allows no custom monitors (§11.2).
 
@@ -1035,7 +1037,8 @@ allowance is unconfirmed. **Decision deferred** between:
 3. Workers Paid, if it unlocks monitors. It has no hard spending cap:
    overage keeps running and is billed (requests $0.30 per million past
    10 million a month), so request floods are the exposure, braked by
-   §6 phase 5. Revisit after phase 5, or if CPU kills appear.
+   §6 phase 5 (deferred until needed). Revisit with phase 5, or if CPU
+   kills appear.
 
 The findings below hold whichever is chosen.
 

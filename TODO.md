@@ -14,11 +14,6 @@ any trade-off made.
 
 ## Next
 
-- [ ] **Lock the API to the site: phase 5** (PLAN §6, "Locking the
-      API to the site"). Phases 1-4 done (below). Next: Bot Fight Mode,
-      then a WAF rate rule, one at a time; re-test local UI development
-      and clip link previews after each. Turnstile only if abuse
-      continues.
 - [ ] **Upstream-miss limit** (PLAN §6). A second Rate Limiting binding
       per IP, checked only before an upstream call; plus tighter limits
       on `/career`, `/achievements` and `/nearest-completion`. Tune with
@@ -33,6 +28,13 @@ any trade-off made.
 
 ## Later
 
+- [ ] **Lock the API to the site: phase 5, when needed** (PLAN §6,
+      "Locking the API to the site"). Deferred 2026-11-08: phases 1-4
+      hold for now. Pick it up on signs of abuse: `inbound.rate_limited`
+      or `upstream.budget_low` climbing, KV writes nearing the daily
+      limit, or a request flood. Then Bot Fight Mode, then a WAF rate
+      rule, one at a time; re-test local UI development and clip link
+      previews after each. Turnstile only if abuse continues.
 - [ ] Negative-cache unknown gamertags for a short time. Each junk lookup
       currently spends a search call from the shared budget. Decide once
       observability shows how often it happens. Each entry is a KV write,
